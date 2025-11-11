@@ -1,0 +1,71 @@
+# workflow/next (/docs/api-reference/workflow-next)
+
+# `workflow/next`
+
+Next.js integration for Workflow DevKit that automatically configures bundling and runtime support.
+
+***
+
+## Functions
+
+<Cards>
+  <Card title="withWorkflow" href="/docs/api-reference/workflow-next/with-workflow">
+    Configures webpack/turbopack loaders to transform workflow code (`"use step"`/`"use workflow"` directives)
+  </Card>
+</Cards>
+
+# withWorkflow (/docs/api-reference/workflow-next/with-workflow)
+
+# `withWorkflow`
+
+Configures webpack/turbopack loaders to transform workflow code (`"use step"`/`"use workflow"` directives)
+
+## Usage
+
+To enable `"use step"` and `"use workflow"` directives while developing locally or deploying to production, wrap your `nextConfig` with `withWorkflow`.
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from 'workflow/next'; // [!code highlight]
+import type { NextConfig } from 'next';
+ 
+const nextConfig: NextConfig = {
+  // … rest of your Next.js config
+};
+
+// not required but allows configuring workflow options
+const workflowConfig = {} 
+
+export default withWorkflow(nextConfig, workflowConfig); // [!code highlight]
+```
+
+If you are exporting a function in your `next.config` you will need to ensure you call the function returned from `withWorkflow`.
+
+```typescript title="next.config.ts" lineNumbers
+import { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+const withNextIntl = createNextIntlPlugin();
+
+export default async function config(
+  phase: string,
+  ctx: {
+    defaultConfig: NextConfig
+  }
+): Promise<NextConfig> {
+  let nextConfig: NextConfig | typeof config = {};
+
+  for (const configModifier of [withNextIntl, withWorkflow]) {
+    nextConfig = configModifier(nextConfig);
+
+    if (typeof nextConfig === "function") {
+      nextConfig = await nextConfig(phase, ctx);
+    }
+  }
+  return nextConfig;
+}
+```
+
+
+## Sitemap
+[Overview of all docs pages](/docs/sitemap.md)
