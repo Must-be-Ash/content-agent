@@ -37,6 +37,11 @@ function ClientApp() {
   const [progressUpdates, setProgressUpdates] = useState<ContentProgressUpdate[]>([]);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // Phase 2 state: Store script and research from workflow
+  const [script, setScript] = useState<string>('');
+  const [research, setResearch] = useState<string>('');
+  const [fetchFuncRef, setFetchFuncRef] = useState<typeof fetch | null>(null);
+
   // Cleanup EventSource on unmount
   useEffect(() => {
     return () => {
@@ -99,6 +104,9 @@ function ClientApp() {
             walletClient as any,
             maxPaymentAmount
           ) as typeof fetch;
+
+          // Store fetchFunc for Phase 2 (video generation)
+          setFetchFuncRef(fetchFunc);
         }
       } catch (signerError) {
         console.warn('[Client] Failed to setup x402 payment:', signerError);
@@ -259,14 +267,225 @@ function ClientApp() {
     };
   };
 
+  // Phase 2: Generate video with Genbase Sora 2 (x402 payment)
+  const generateVideo = async (scriptText: string, researchText: string) => {
+    try {
+      console.log('[Client] Starting Phase 2: Video generation');
+
+      setProgressUpdates((prev) => [
+        ...prev,
+        {
+          step: 'video_creation',
+          status: 'in_progress',
+          message: 'Creating video with Sora 2...',
+        },
+      ]);
+
+      // Use the x402-wrapped fetch from Phase 1
+      const fetchFunc = fetchFuncRef || fetch;
+
+      const genbaseEndpoint = 'https://api.genbase.ai/api/video/create-sora2';
+
+      console.log('[Client] Calling Genbase Sora 2 API...');
+      console.log('[Client] Script length:', scriptText.length, 'characters');
+
+      // Call Genbase with x402-wrapped fetch
+      // No Authorization header needed - only X-PAYMENT (added by wrapper)
+      const videoResponse = await fetchFunc(genbaseEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: scriptText,
+          model: 'sora-2',
+          seconds: '10',
+          size: '1280x720',
+        }),
+      });
+
+      if (!videoResponse.ok) {
+        const errorData = await videoResponse.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(`Video generation failed: ${errorData.error || videoResponse.statusText}`);
+      }
+
+      const videoData = await videoResponse.json();
+
+      if (!videoData.success || !videoData.data?.id) {
+        throw new Error('Genbase API returned invalid response');
+      }
+
+      const taskId = videoData.data.id;
+      console.log('[Client] Video task created:', taskId);
+
+      setProgressUpdates((prev) => [
+        ...prev,
+        {
+          step: 'video_creation',
+          status: 'completed',
+          message: 'Video generation started',
+          data: { videoTaskId: taskId },
+        },
+      ]);
+
+      // Start polling for video completion
+      await pollVideoStatus(taskId, scriptText, researchText);
+    } catch (error) {
+      console.error('[Client] Video generation failed:', error);
+
+      let errorMessage = 'Failed to generate video';
+      if (error instanceof Error) {
+        if (error.message.includes('rejected')) {
+          errorMessage = 'Video payment was rejected';
+        } else if (error.message.includes('Insufficient funds')) {
+          errorMessage = 'Insufficient USDC balance for video generation';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
+      setError(errorMessage);
+      setLoading(false);
+    }
+  };
+
+  // Poll Genbase video status (FREE - no payment required)
+  const pollVideoStatus = async (taskId: string, scriptText: string, researchText: string) => {
+    const maxAttempts = 30; // 30 attempts * 30s = 15 minutes max
+    const pollInterval = 30000; // 30 seconds
+
+    console.log('[Client] Starting video polling:', taskId);
+
+    setProgressUpdates((prev) => [
+      ...prev,
+      {
+        step: 'video_polling',
+        status: 'in_progress',
+        message: 'Generating video... This may take 3-10 minutes',
+        data: {
+          pollingAttempt: 1,
+          pollingMaxAttempts: maxAttempts,
+          estimatedWaitSeconds: 180, // 3 minutes minimum
+        },
+      },
+    ]);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const queryEndpoint = `https://api.genbase.ai/api/video/query?id=${taskId}`;
+        const statusResponse = await fetch(queryEndpoint);
+
+        if (!statusResponse.ok) {
+          throw new Error(`Status check failed: ${statusResponse.statusText}`);
+        }
+
+        const statusData = await statusResponse.json();
+
+        if (!statusData.success || !statusData.data) {
+          throw new Error('Invalid status response from Genbase');
+        }
+
+        const { status, video_url, thumbnail_url, error: videoError } = statusData.data;
+
+        console.log(`[Client] Polling attempt ${attempt}/${maxAttempts} - Status: ${status}`);
+
+        // Map status to progress percentage
+        const progressPercent =
+          status === 'pending'
+            ? '20%'
+            : status === 'processing'
+            ? '50%'
+            : status === 'video_upsampling'
+            ? '80%'
+            : 'Unknown';
+
+        // Update progress
+        setProgressUpdates((prev) => [
+          ...prev.slice(0, -1), // Remove last polling update
+          {
+            step: 'video_polling',
+            status: 'in_progress',
+            message: `Generating video... (${progressPercent})`,
+            data: {
+              pollingAttempt: attempt,
+              pollingMaxAttempts: maxAttempts,
+              videoStatus: status,
+              videoProgress: progressPercent,
+            },
+          },
+        ]);
+
+        // Check if video is ready
+        if (status === 'Ready' || status === 'completed') {
+          console.log('[Client] ✅ Video ready:', video_url);
+
+          setProgressUpdates((prev) => [
+            ...prev.slice(0, -1),
+            {
+              step: 'video_polling',
+              status: 'completed',
+              message: 'Video ready!',
+              data: {
+                videoUrl: video_url,
+                thumbnailUrl: thumbnail_url,
+              },
+            },
+          ]);
+
+          // Set final result
+          setResult({
+            videoUrl: video_url,
+            script: scriptText,
+            research: researchText,
+            totalCostUSD: 0.25, // ~$0.05 search + $0.20 video
+          });
+
+          setLoading(false);
+          return;
+        }
+
+        // Check if video generation failed
+        if (status === 'failed') {
+          throw new Error(videoError || 'Video generation failed');
+        }
+
+        // Wait before next poll (except on last attempt)
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        }
+      } catch (error) {
+        console.error('[Client] Polling error:', error);
+
+        setError(error instanceof Error ? error.message : 'Failed to check video status');
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Timeout after max attempts
+    console.error('[Client] Video generation timed out after', maxAttempts, 'attempts');
+    setError(`Video generation timed out after ${maxAttempts * pollInterval / 1000 / 60} minutes`);
+    setLoading(false);
+  };
+
   const fetchFinalResult = async (runId: string) => {
     try {
       const response = await fetch(`/api/content/status/${runId}`);
       const data = await response.json();
 
       if (data.status === 'completed' && data.result) {
-        setResult(data.result);
-        setLoading(false);
+        console.log('[Client] Phase 1 complete - Script generated');
+        console.log('[Client] Script:', data.result.script?.substring(0, 100) + '...');
+
+        // Store script and research from Phase 1
+        const scriptText = data.result.script || '';
+        const researchText = data.result.research || '';
+
+        setScript(scriptText);
+        setResearch(researchText);
+
+        // Start Phase 2: Video generation with Genbase x402
+        await generateVideo(scriptText, researchText);
       } else if (data.status === 'failed') {
         setError(data.error || 'Workflow failed');
         setLoading(false);

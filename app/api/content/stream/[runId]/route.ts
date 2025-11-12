@@ -35,35 +35,62 @@ export async function GET(
         const reader = readable.getReader();
         const encoder = new TextEncoder();
 
+        let isClosed = false;
+
         try {
           while (true) {
             const { done, value } = await reader.read();
 
             if (done) {
-              // Send completion event
-              controller.enqueue(
-                encoder.encode('event: done\ndata: {}\n\n')
-              );
-              controller.close();
+              // Send completion event only if controller is not closed
+              if (!isClosed) {
+                try {
+                  controller.enqueue(
+                    encoder.encode('event: done\ndata: {}\n\n')
+                  );
+                  controller.close();
+                  isClosed = true;
+                } catch (err) {
+                  // Controller already closed, ignore
+                  console.log('[Stream] Controller already closed on done');
+                }
+              }
               break;
             }
 
-            // Send progress update as SSE event
-            const sseData = `data: ${JSON.stringify(value)}\n\n`;
-            controller.enqueue(encoder.encode(sseData));
+            // Send progress update as SSE event only if controller is not closed
+            if (!isClosed) {
+              try {
+                const sseData = `data: ${JSON.stringify(value)}\n\n`;
+                controller.enqueue(encoder.encode(sseData));
+              } catch (err) {
+                // Controller already closed, stop sending
+                console.log('[Stream] Controller closed during enqueue');
+                isClosed = true;
+                break;
+              }
+            }
           }
         } catch (error) {
           console.error('[Stream] Error reading workflow stream:', error);
-          // Send error event
-          controller.enqueue(
-            encoder.encode(
-              `event: error\ndata: ${JSON.stringify({
-                message: 'Stream error',
-                error: error instanceof Error ? error.message : 'Unknown error'
-              })}\n\n`
-            )
-          );
-          controller.close();
+          // Send error event only if controller is not closed
+          if (!isClosed) {
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `event: error\ndata: ${JSON.stringify({
+                    message: 'Stream error',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                  })}\n\n`
+                )
+              );
+              controller.close();
+              isClosed = true;
+            } catch (err) {
+              // Controller already closed, ignore
+              console.log('[Stream] Controller already closed on error');
+            }
+          }
         } finally {
           reader.releaseLock();
         }
