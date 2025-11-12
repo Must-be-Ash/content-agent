@@ -2,24 +2,48 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Repository Overview
+## Project Overview
 
-This is a documentation and development repository for building an **Agent Marketplace with Vercel Workflow (WDK) Orchestration** - a Fiverr/Upwork-style marketplace where agent services are invoked and paid per-use via x402 micropayments.
+This is an **AI Content Generation Web App with x402 Micropayments** - users enter topics and receive AI-generated video content. The system uses Vercel Workflow DevKit (WDK) for orchestration, x402 micropayments on Base network for pay-per-use services, and Coinbase Developer Platform (CDP) embedded wallets for seamless payment handling.
 
-The repository contains:
-- **workflow-repo/**: The Workflow DevKit SDK source code and packages
-- **workflow-docs/**: Documentation for Workflow concepts and APIs
-- **workflow-examples/**: Reference implementations and example projects
-- **spec4.md**: Complete technical specification for the agent marketplace
-- **understand.md, workflow.md, workflow-blog.md**: Reference documentation
+**Primary Reference**: This project follows the EXACT pattern from `/Users/ashnouruzi/firecrawl-402demo` for x402 payment integration.
 
-## Key Concepts
+## Development Commands
 
-### Workflow DevKit (WDK)
+```bash
+# Development server
+npm run dev
 
-Workflow DevKit transforms async JavaScript into durable, resumable workflows using two primary directives:
+# Production build
+npm run build
 
-1. **`"use workflow"`**: Deterministic orchestrator functions that can pause/resume and replay safely
+# Start production server
+npm start
+
+# Lint code
+npm run lint
+```
+
+## Key Technologies
+
+- **Framework**: Next.js 16 with App Router
+- **Orchestration**: Vercel Workflow DevKit (`workflow`, `@workflow/next`, `@workflow/ai`)
+- **AI Services**:
+  - Script Generation: OpenAI GPT-4o via Vercel AI Gateway
+  - Video Generation: Genbase Sora 2 API ($0.20 USDC per 10s video)
+  - Web Search: Firecrawl API (~$0.01-0.05 USDC per search)
+- **Payments**: x402 protocol on Base network (Chain ID 8453)
+- **Currency**: USDC on Base (Contract: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
+- **Wallet**: Coinbase Developer Platform embedded wallets
+- **Styling**: Tailwind CSS v4
+
+## Core Architecture
+
+### Workflow DevKit (WDK) Directives
+
+Two primary directives transform async JavaScript into durable, resumable workflows:
+
+1. **`"use workflow"`**: Deterministic orchestrator functions
    - Pure control flow logic (branching, loops, Promise.all)
    - No direct I/O, DB, or Node.js APIs (ensures replay determinism)
    - Can use: `sleep()`, `createWebhook()`, `defineHook()`, `createHook()`
@@ -29,146 +53,157 @@ Workflow DevKit transforms async JavaScript into durable, resumable workflows us
    - Automatic retries with configurable backoff
    - Throw `FatalError` for non-retryable conditions
 
-### Project Goal
-
-Build a marketplace where:
-- Jobs are decomposed into tasks and coordinated by orchestrator workflows
-- Specialist agents (research, copywriting, storyboard, video) are invoked via HTTP
-- Payments handled per-use via x402 micropayments
-- Workflows handle retries, failures, and can resume across long waits
-- Human-in-the-loop approvals using hooks
-- Async agent callbacks using webhooks
-
-## Working with workflow-repo/
-
-### Development Commands
-
-```bash
-# Build all packages
-cd workflow-repo && pnpm build
-
-# Run tests across all packages
-cd workflow-repo && pnpm test
-
-# Run end-to-end tests
-cd workflow-repo && pnpm test:e2e
-
-# Format code with Biome
-cd workflow-repo && pnpm format
-
-# Lint and typecheck
-cd workflow-repo && pnpm typecheck
-
-# Clean build artifacts
-cd workflow-repo && pnpm clean
-```
-
-### Package Testing
-
-```bash
-# Test core functionality
-cd workflow-repo/packages/core && pnpm test
-
-# Test specific file
-cd workflow-repo/packages/core && pnpm vitest run src/[filename].test.ts
-
-# E2E tests (requires running dev server)
-cd workflow-repo/workbench/nextjs-turbopack && pnpm dev &
-sleep 15
-DEPLOYMENT_URL="http://localhost:3000" APP_NAME="nextjs-turbopack" pnpm vitest run packages/core/e2e/e2e.test.ts
-```
-
-### Example App Development
-
-```bash
-# Build workflow bundles for standalone example
-cd workflow-repo/workbench/example && pnpm build
-
-# Use workflow CLI
-cd workflow-repo/workbench/example && pnpm workflow [command]
-cd workflow-repo/workbench/example && pnpm wf [command]  # shorthand
-
-# Next.js development
-cd workflow-repo/workbench/nextjs-turbopack && pnpm dev
-cd workflow-repo/workbench/nextjs-turbopack && pnpm build
-cd workflow-repo/workbench/nextjs-turbopack && pnpm start
-```
-
-## Agent Marketplace Architecture
-
-### File Structure (when implementing)
+### File Structure (When Implementing)
 
 ```
 /app
   /api
-    /jobs/start/route.ts        # calls start(orchestrator, [jobSpec])
-    /approvals/route.ts         # resumeHook(token, payload) for human approvals
-  /workflows
-    orchestrator.ts             # "use workflow" - main orchestrator
-    /steps
-      payments.ts               # "use step" - payWith402(...)
-      agents.ts                 # "use step" - call research/copy/storyboard/video
-      webhooks.ts               # "use step" - respondWith helpers
-next.config.ts                  # export default withWorkflow(nextConfig)
+    /content
+      /create/route.ts              # Start workflow with start(orchestrator, [jobSpec])
+      /status/[runId]/route.ts      # Check workflow status with getRun(runId)
+    /wallet
+      /balance/route.ts             # Check USDC balance
+  /providers.tsx                    # CDPReactProvider setup
+  /layout.tsx                       # Wrap with Providers
+  /page.tsx                         # Main UI with x402-fetch integration
+/workflows
+  /content-generator.ts             # Main orchestrator workflow
+  /steps
+    /content-steps.ts               # Steps: searchWeb, generateScript, createSora2Video, etc.
+/components
+  /ui/                              # shadcn components
+  /sign-in-screen.tsx
+  /wallet-status.tsx
+/lib
+  /config.ts                        # CDP, Firecrawl, app config
+/types
+  /firecrawl.d.ts                   # TypeScript types
+next.config.ts                      # export default withWorkflow(nextConfig)
 ```
 
-### Core Workflow Patterns
+## x402 Payment Integration Pattern
 
-1. **Starting a workflow**: Use `start(workflowFn, args)` from API routes
-2. **Sync agent calls**: Steps with `fetch()` and automatic retries
-3. **Async agent callbacks**: `createWebhook()` + pass `webhook.url` to agent
-4. **Human approvals**: `defineHook()` + `for await` loop over events
-5. **Delays/pacing**: `sleep(duration)` pauses without compute
-6. **Parallel execution**: `Promise.all([stepA(), stepB()])` for fan-out/fan-in
+**CRITICAL**: Follow the EXACT pattern from `/Users/ashnouruzi/firecrawl-402demo`:
 
-### Workflow vs Step Responsibilities
+### Client Side (app/page.tsx)
+```typescript
+// 1. Get CDP user and convert to viem account
+const user = await getCurrentUser();
+const viemAccount = await toViemAccount(user.evmAccounts[0]);
 
-**Workflows** (`"use workflow"`):
-- Receive job specifications
-- Plan task graphs (pure logic)
-- Orchestrate step execution
-- Handle approval cycles via hooks
-- Aggregate outputs
-- NO direct Node.js side effects
+// 2. Create wallet client for Base network
+const walletClient = createWalletClient({
+  account: viemAccount,
+  chain: base,
+  transport: http('https://mainnet.base.org'),
+}).extend(publicActions);
 
-**Steps** (`"use step"`):
-- x402 payment processing
-- HTTP calls to agent endpoints
-- Database operations
-- File I/O
-- Response validation
-- Error handling with retries
+// 3. Wrap fetch with x402 payment capability
+const maxPaymentAmount = BigInt(0.1 * 10 ** 6); // 0.1 USDC
+const fetchFunc = wrapFetchWithPayment(fetch, walletClient, maxPaymentAmount);
 
-## Key WDK APIs
+// 4. Call API - x402-fetch automatically handles 402 → payment → retry
+const response = await fetchFunc('/api/content/create', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ topic, userId }),
+});
+```
 
-### In Workflows
-- `sleep(duration)` - Pause execution without compute (e.g., "2h", "10m")
-- `createWebhook({ respondWith: "manual" | value })` - Create callback URL for async agents
-- `defineHook<T>()` - Define a hook type for external events
-- `hook.create({ token })` - Create hook instance with unique token
-- `for await (const event of hook)` - Iterate over hook events
+### API Route (app/api/content/create/route.ts)
+```typescript
+// Extract and forward X-PAYMENT header to workflow
+const paymentHeader = request.headers.get('X-PAYMENT');
+await start(contentGeneratorWorkflow, [{ topic, paymentHeader, ... }]);
+```
 
-### In API Routes
-- `start(workflowFn, args)` - Start a new workflow run, returns `{ runId }`
-- `resumeHook(token, payload)` - Resume paused workflow via hook
-- `resumeWebhook(token, payload)` - Resume via webhook (usually auto-handled)
+### Workflow Step (workflows/steps/content-steps.ts)
+```typescript
+"use step";
 
-### In Steps
-- `request.respondWith(response)` - Send webhook response (when using manual mode)
+// Forward X-PAYMENT header to service (Firecrawl or Genbase)
+const headers: Record<string, string> = {
+  'Content-Type': 'application/json',
+  'Authorization': `Bearer ${API_KEY}`,
+};
+
+if (params.paymentHeader) {
+  headers['X-PAYMENT'] = params.paymentHeader;
+}
+
+// Service verifies payment and returns X-PAYMENT-RESPONSE with TX hash
+const response = await axios.post(endpoint, body, { headers });
+```
+
+## Workflow Patterns
+
+### Main Content Generator Flow
+1. **Search web** with Firecrawl (x402 payment via client wrapper)
+2. **Generate script** using OpenAI GPT-4o via AI Gateway
+3. **Create video** with Genbase Sora 2 (x402 payment)
+4. **Poll for completion** using `sleep('30s')` (FREE query endpoint)
+5. **Return video URL** with cost breakdown
+
+### Key WDK APIs
+
+**In Workflows:**
+- `sleep(duration)` - Pause execution without compute (e.g., "30s", "2h")
+- `createWebhook({ respondWith })` - Create callback URL for async services
+- `defineHook<T>()` - Define hook type for external events
+
+**In API Routes:**
+- `start(workflowFn, args)` - Start workflow, returns `{ runId }`
+- `getRun(runId)` - Check workflow status
+- `resumeHook(token, payload)` - Resume paused workflow
+
+**In Steps:**
 - Throw `FatalError` - Skip retries for non-transient errors
-- Throw `RetryableError` or standard `Error` - Trigger automatic retry
+- Throw `Error` - Trigger automatic retry with backoff
 
-## Next.js Integration
+## Genbase Sora 2 API
+
+### Create Video (Paid via x402)
+**POST** `https://api.genbase.ai/api/video/create-sora2`
+- **Cost**: $0.20 USDC per 10s video
+- **Headers**: `X-PAYMENT` (from x402-fetch wrapper)
+- **Body**: `{ prompt, model: "sora-2", seconds: "10", size: "1280x720" }`
+- **Returns**: `{ data: { id: "sora-2:task_..." } }`
+- **Status progression**: pending → processing → video_upsampling → Ready
+
+### Query Video Status (FREE)
+**GET** `https://api.genbase.ai/api/video/query?id=<task_id>`
+- **Cost**: FREE (no payment required, unlimited polling)
+- **Returns**: `{ data: { status, video_url, thumbnail_url } }`
+- **Generation time**: 3-10 minutes
+
+### Polling Strategy
+```typescript
+"use step";
+for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  const response = await axios.get(queryEndpoint, { params: { id: taskId } });
+  if (response.data.data.status === 'Ready') {
+    return response.data.data.video_url;
+  }
+  await import('workflow').then(m => m.sleep('30s')); // Zero compute cost
+}
+```
+
+## Firecrawl API (x402)
+
+**POST** `https://api.firecrawl.dev/v2/x402/search`
+- **Cost**: ~$0.01-0.05 USDC per search
+- **Headers**: `Authorization: Bearer ${FIRECRAWL_API_KEY}`, `X-PAYMENT` (forwarded)
+- **Body**: `{ query, limit, sources: ['web'], scrapeOptions: { onlyMainContent: true } }`
+- **Returns**: `{ data: { web: [{ title, url, markdown }] } }`
+
+## Next.js + Workflow Integration
 
 ```typescript
 // next.config.ts
 import { withWorkflow } from 'workflow/next';
 import type { NextConfig } from 'next';
 
-const nextConfig: NextConfig = {
-  // ... your config
-};
-
+const nextConfig: NextConfig = { /* config */ };
 export default withWorkflow(nextConfig);
 ```
 
@@ -177,56 +212,105 @@ Auto-generated routes:
 - `/.well-known/workflow/v1/flow` - Workflow execution
 - `/.well-known/workflow/v1/step` - Step execution
 
+## CDP Embedded Wallet Setup
+
+```typescript
+// app/providers.tsx
+import { CDPReactProvider } from '@coinbase/cdp-react';
+
+const CDP_CONFIG = {
+  projectId: process.env.NEXT_PUBLIC_CDP_PROJECT_ID ?? '',
+};
+
+export default function Providers({ children }) {
+  return (
+    <CDPReactProvider config={CDP_CONFIG} app={{ name: 'AI Content Generator' }}>
+      {children}
+    </CDPReactProvider>
+  );
+}
+```
+
+**CDP Hooks:**
+- `useIsInitialized()` - Check if CDP is ready
+- `useIsSignedIn()` - Check authentication status
+- `useEvmAddress()` - Get wallet address
+
 ## Observability
 
-During development:
+**Development:**
 ```bash
-npx workflow inspect runs          # CLI view of runs
+npx workflow inspect runs          # CLI view
 npx workflow inspect runs --web    # Web UI
 ```
 
-In production (Vercel):
+**Production (Vercel):**
 - Navigate to AI → Workflows dashboard
 - View run timelines, step logs, inputs/outputs
-- Track sleeps, hook/webhook resume events
 - Monitor errors with retry histories
 
 ## Important Constraints
 
 1. **Workflow functions must be deterministic**
-   - No `Math.random()`, `Date.now()`, or nondeterministic operations (unless seeded by sandbox)
+   - No `Math.random()`, `Date.now()`, or nondeterministic operations
    - No direct file system, database, or network calls
    - All side effects must be in steps
 
-2. **Changesets required for workflow-repo PRs**
-   - Run `pnpm changeset add` for any package changes
-   - Only include changed packages in changeset
-   - Mark all changes as "patch" (never "major" or "minor")
+2. **x402 payment flow**
+   - Payment handled client-side by x402-fetch wrapper
+   - X-PAYMENT header forwarded through API → workflow → steps
+   - Services verify payment and return X-PAYMENT-RESPONSE with TX hash
 
-3. **Code style (Biome)**
-   - 2-space indentation, single quotes, trailing commas (ES5)
-   - Import type enforcement enabled
-   - No explicit `any` allowed
+3. **Base network (Chain ID 8453)**
+   - All payments in USDC (6 decimals)
+   - View transactions on BaseScan: https://basescan.org/tx/{hash}
+
+## Cost Breakdown (Per Video)
+
+| Service | Cost | Payment | Provider |
+|---------|------|---------|----------|
+| Web Search (5-10 results) | $0.01-0.05 | x402 on Base | Firecrawl |
+| Script Generation | $0.00* | AI Gateway | OpenAI GPT-4o |
+| Video (10s, 720p) | $0.20 | x402 on Base | Genbase Sora 2 |
+| **Total** | **~$0.25** | | |
+
+*Free with Vercel AI Gateway
 
 ## Documentation References
 
-When working on workflow features, refer to:
+**Specification:**
+- `content-gen-mvp-spec.md` - Complete technical specification with implementation phases
+
+**Workflow Documentation (in content-agent-docs/):**
 - `workflow-docs/workflows-and-steps.md` - Core concepts
-- `workflow-docs/hooks.md` - Hook patterns for external events
-- `workflow-docs/starting-workflows.md` - Workflow initiation
-- `workflow-docs/control-flow-patterns.md` - Common patterns
+- `workflow-docs/hooks.md` - Hook patterns
 - `workflow-docs/errors-and-retries.md` - Error handling
-- `workflow-docs/api-reference/` - Complete API documentation
-- `spec4.md` - Full agent marketplace specification
+- `workflow-docs/api-reference/` - Complete API docs
 
-## Package Manager
+**Workflow Examples (in content-agent-docs/):**
+- Reference implementation patterns
+- See `START_HERE.md` for navigation guide
 
-This project uses **pnpm** with workspace configuration. The required version is specified in `workflow-repo/package.json#packageManager`.
+**Primary x402 Reference:**
+- `/Users/ashnouruzi/firecrawl-402demo/` - EXACT pattern to follow
 
 ## Security Notes
 
+- Never commit API keys or secrets to git
+- Store credentials in environment variables
 - Use secret tokens in webhook URLs
-- Scope tokens by jobId/user/channel
-- Keep x402 credentials in environment variables
 - Sign payment requests in steps (never in workflows)
-- Exclude `/.well-known/workflow/*` from custom middleware/proxies
+- X-PAYMENT headers should only be forwarded, never generated in server code
+- You have access to all the information you need about workflow kit including all the docs, API references, error handeling and the repo and code examples here in these three folders:
+  /Users/ashnouruzi/content-agent/content-agent-docs/workflow-docs
+  /Users/ashnouruzi/content-agent/content-agent-docs/workflow-examples
+  /Users/ashnouruzi/content-agent/content-agent-docs/workflow-repo
+
+  and here are reference guides for using workflow kit:
+  /Users/ashnouruzi/content-agent/START_HERE.md
+  /Users/ashnouruzi/content-agent/WORKFLOW_EXAMPLES_ANALYSIS.md
+  /Users/ashnouruzi/content-agent/WORKFLOW_EXAMPLES_MATRIX.md
+  /Users/ashnouruzi/content-agent/WORKFLOW_EXAMPLES_README.md
+  /Users/ashnouruzi/content-agent/WORKFLOW_QUICK_REFERENCE.md
+  /Users/ashnouruzi/content-agent/workflow.md
+- we are using 'pnpm' not 'npm'
