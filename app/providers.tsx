@@ -2,13 +2,17 @@
 
 import { CDPReactProvider } from '@coinbase/cdp-react';
 
-// CDP Configuration - following slop-machine pattern with required properties
+// CDP Configuration - using EOA only (no smart accounts)
+// This matches the firecrawl-402demo pattern for simpler wallet management
 const CONFIG = {
   projectId: process.env.NEXT_PUBLIC_CDP_PROJECT_ID ?? '',
   appName: 'AI Content Generator',
   appLogoUrl: '/logo.svg',
   ethereum: {
-    createOnLogin: 'smart' as const,
+    createOnLogin: "eoa" as const,  // Explicitly create EOA wallet only
+  },
+  solana: {
+    // No Solana wallet creation
   },
 };
 

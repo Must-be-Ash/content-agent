@@ -1,6 +1,6 @@
 'use client';
 
-import { useEvmAddress, useIsSignedIn, useSignOut } from '@coinbase/cdp-hooks';
+import { useCurrentUser, useIsSignedIn, useSignOut } from '@coinbase/cdp-hooks';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Wallet, Copy, Check, LogOut } from 'lucide-react';
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
@@ -224,8 +224,11 @@ function MobileWallet(props: MobileWalletProps) {
 
 export function ExpandableWallet() {
   const { isSignedIn } = useIsSignedIn();
-  const { evmAddress } = useEvmAddress();
+  const { currentUser } = useCurrentUser();
   const { signOut } = useSignOut();
+
+  // Use EOA address directly (not smart account)
+  const evmAddress = currentUser?.evmAccounts?.[0];
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);

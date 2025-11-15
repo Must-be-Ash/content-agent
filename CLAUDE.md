@@ -314,3 +314,5 @@ npx workflow inspect runs --web    # Web UI
   /Users/ashnouruzi/content-agent/WORKFLOW_QUICK_REFERENCE.md
   /Users/ashnouruzi/content-agent/workflow.md
 - we are using 'pnpm' not 'npm'
+- we are using https://api.firecrawl.dev/v2/x402/search set as FIRECRAWL_API_BASE_URL in .env which is the x402 endpoint for firecrawl. we have FIRECRAWL_API_KEY that we need to use in the payment header of the x402 firecrawl call.
+- Follow this functional code example /Users/ashnouruzi/firecrawl-402demo EXACTLY for setting up Firecrawl using x402

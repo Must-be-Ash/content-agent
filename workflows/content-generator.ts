@@ -23,9 +23,6 @@ export type ProgressStep =
   | 'searching'
   | 'search_payment'
   | 'script_generation'
-  | 'video_creation'
-  | 'video_payment'
-  | 'video_polling'
   | 'completed'
   | 'failed';
 
@@ -37,28 +34,8 @@ export interface ContentProgressUpdate {
     // Search step
     searchResultsCount?: number;
 
-    // Payment confirmations
-    paymentTx?: string;
-    paymentAmount?: string;
-    paymentNetwork?: string;
-
     // Script generation
     scriptLength?: number;
-
-    // Video creation
-    videoTaskId?: string;
-
-    // Polling progress
-    pollingAttempt?: number;
-    pollingMaxAttempts?: number;
-    videoStatus?: string;
-    videoProgress?: string;
-    estimatedWaitSeconds?: number;
-
-    // Final result
-    videoUrl?: string;
-    thumbnailUrl?: string;
-    totalCostUSD?: number;
 
     // Error details
     error?: string;
@@ -119,7 +96,7 @@ export async function contentGeneratorWorkflow(
     data: { scriptLength: script.length },
   });
 
-  // Close the stream to signal completion
+  // Close the stream
   await closeProgress(progress);
 
   return {

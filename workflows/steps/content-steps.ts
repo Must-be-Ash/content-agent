@@ -11,9 +11,9 @@ import type { ContentProgressUpdate } from '@/workflows/content-generator';
 // These steps write to the workflow's writable stream
 // They MUST be steps because getWriter() is not supported in workflow functions
 
-export async function writeProgress(
-  writable: WritableStream<ContentProgressUpdate>,
-  update: ContentProgressUpdate
+export async function writeProgress<T>(
+  writable: WritableStream<T>,
+  update: T
 ) {
   "use step";
 
@@ -22,7 +22,7 @@ export async function writeProgress(
   writer.releaseLock();
 }
 
-export async function closeProgress(writable: WritableStream) {
+export async function closeProgress<T>(writable: WritableStream<T>) {
   "use step";
 
   await writable.close();
@@ -174,21 +174,31 @@ export async function generateScript(params: {
 
   const result = await generateText({
     model: 'openai/gpt-4o',
-    prompt: `You are a creative video script writer. Generate an engaging ${params.duration}-second video script about "${params.topic}".
+    prompt: `You are a UGC content creator making viral Instagram Reels and TikToks. Generate a ${params.duration}-second UGC-style video prompt about "${params.topic}" that will be used to generate an AI video with Sora 2.
 
-Research context:
+Research findings to incorporate:
 ${params.research}
 
-Requirements:
-- Hook viewers in first 2 seconds
-- Clear, concise messaging for ${params.duration}s format
-- Visual and dynamic descriptions (Sora 2 will generate video from this)
-- Natural, conversational tone
-- Format: Single paragraph prompt optimized for AI video generation
+UGC Video Style Requirements:
+- First-person POV or creator-facing camera (selfie mode)
+- Handheld, mobile-shot aesthetic (NOT professional production)
+- Authentic, casual TikTok/Instagram Reel vibe
+- Fast-paced with quick cuts and dynamic movements
+- Visual storytelling that shows research insights (not just tells)
+- Hook viewers immediately with engaging visual or action
+- Show real screens, devices, apps, or interfaces when relevant
+- Include creator reactions and expressions (excitement, surprise, realization)
 
-Example: "A sleek smartphone displaying x402 protocol diagrams floats in a futuristic digital space. Glowing USDC coins flow through transparent pipes connecting to various app icons. The camera zooms into the phone screen showing a live transaction, then pulls back to reveal a network of connected devices, all exchanging micropayments in real-time."
+Content Requirements:
+- Synthesize the key research findings into visual scenes
+- Make complex topics digestible and engaging
+- Use visual metaphors and real-world examples
+- Keep it dynamic - no static shots
+- Format: Single paragraph prompt describing what the camera sees
 
-Script:`,
+Example UGC Prompt: "A creator in a cozy bedroom holds their phone in selfie mode, eyes wide with excitement as they say 'Wait till you see THIS.' Quick cut to close-up of their phone screen showing a crypto wallet interface with USDC balance. Camera flips to show their laptop displaying code and payment flows. Handheld pan across sticky notes on the wall with key concepts. Cut back to selfie mode as creator does a 'mind-blown' gesture. Fast transition to split-screen showing before/after comparison. Final shot: creator holds phone to camera showing the result, nodding enthusiastically."
+
+Generate a UGC video prompt that naturally explains these research insights through authentic, engaging visual storytelling:`,
   });
 
   return result.text;

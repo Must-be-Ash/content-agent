@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Providers from './providers';
-import { useIsInitialized, useIsSignedIn, useEvmAddress } from '@coinbase/cdp-hooks';
+import { useIsInitialized, useIsSignedIn, useCurrentUser } from '@coinbase/cdp-hooks';
 import { getCurrentUser, toViemAccount } from '@coinbase/cdp-core';
 import { wrapFetchWithPayment } from 'x402-fetch';
 import { createWalletClient, http, publicActions } from 'viem';
@@ -15,32 +15,55 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import type { ContentProgressUpdate } from '@/workflows/content-generator';
+import type { VideoPollProgressUpdate } from '@/workflows/video-poll';
+import {
+  logPaymentInitiation,
+  logPaymentSettlement,
+  logPaymentError,
+  extractTxHashFromPaymentResponse,
+} from '@/lib/payment-logger';
+
+// Union type for all progress updates (script + video polling)
+type ProgressUpdate = ContentProgressUpdate | VideoPollProgressUpdate;
 
 interface ContentResult {
   videoUrl: string;
   script: string;
   research: string;
   totalCostUSD: number;
+  thumbnailUrl?: string;
   transactionHashes?: string[];
 }
 
 function ClientApp() {
   const { isInitialized } = useIsInitialized();
   const { isSignedIn } = useIsSignedIn();
-  const { evmAddress } = useEvmAddress();
+  const { currentUser } = useCurrentUser();
+
+  // Debug logging to see what's in currentUser
+  useEffect(() => {
+    if (currentUser) {
+      console.log('===== CURRENT USER DEBUG =====');
+      console.log('Full currentUser object:', currentUser);
+      console.log('evmAccounts:', currentUser.evmAccounts);
+      console.log('evmSmartAccounts:', currentUser.evmSmartAccounts);
+      console.log('evmAccounts[0]:', currentUser.evmAccounts?.[0]);
+      console.log('evmSmartAccounts[0]:', currentUser.evmSmartAccounts?.[0]);
+      console.log('=============================');
+    }
+  }, [currentUser]);
+
+  // Use EOA address directly (not smart account)
+  // evmAccounts[0] is already the address string
+  const evmAddress = currentUser?.evmAccounts?.[0];
 
   const [topic, setTopic] = useState('');
   const [loading, setLoading] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
   const [result, setResult] = useState<ContentResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [progressUpdates, setProgressUpdates] = useState<ContentProgressUpdate[]>([]);
+  const [progressUpdates, setProgressUpdates] = useState<ProgressUpdate[]>([]);
   const eventSourceRef = useRef<EventSource | null>(null);
-
-  // Phase 2 state: Store script and research from workflow
-  const [script, setScript] = useState<string>('');
-  const [research, setResearch] = useState<string>('');
-  const [fetchFuncRef, setFetchFuncRef] = useState<typeof fetch | null>(null);
 
   // Cleanup EventSource on unmount
   useEffect(() => {
@@ -72,7 +95,7 @@ function ClientApp() {
 
     try {
       console.log('[Client] Starting content generation for topic:', topic);
-      console.log('[Client] User wallet address:', evmAddress);
+      console.log('[Client] User EOA wallet address:', evmAddress);
 
       // Get CDP user and create viem account for x402 payments
       // This is EXACTLY the pattern from firecrawl-402demo
@@ -81,7 +104,19 @@ function ClientApp() {
       try {
         const user = await getCurrentUser();
         if (user && user.evmAccounts && user.evmAccounts.length > 0) {
+          console.log('[Client] CDP user has', user.evmAccounts.length, 'EVM account(s)');
+
+          // Log all accounts for debugging
+          user.evmAccounts.forEach((account, idx) => {
+            console.log(`[Client] Account ${idx}:`, account);
+          });
+
           const viemAccount = await toViemAccount(user.evmAccounts[0]);
+          const paymentAddress = viemAccount.address as string;
+
+          console.log('[Client] 🔑 Wallet address (EOA from evmAccounts[0]):', paymentAddress);
+          console.log('[Client] ✅ Using same address for UI and payments');
+
           const chain = base; // Base network (Chain ID 8453)
           const rpcUrl = 'https://mainnet.base.org';
 
@@ -104,9 +139,6 @@ function ClientApp() {
             walletClient as any,
             maxPaymentAmount
           ) as typeof fetch;
-
-          // Store fetchFunc for Phase 2 (video generation)
-          setFetchFuncRef(fetchFunc);
         }
       } catch (signerError) {
         console.warn('[Client] Failed to setup x402 payment:', signerError);
@@ -114,30 +146,25 @@ function ClientApp() {
       }
 
       // Step 1: Search with Firecrawl (x402 payment handled by fetchFunc wrapper)
-      console.log('[Client] Calling Firecrawl search API...');
+      console.log('[Client] Calling Firecrawl search API via proxy...');
 
-      const firecrawlEndpoint = process.env.NEXT_PUBLIC_FIRECRAWL_API_BASE_URL ||
-        'https://api.firecrawl.dev/v2/x402/search';
-      const firecrawlApiKey = process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY;
+      // Log payment initiation
+      logPaymentInitiation('Firecrawl', 0.05); // Estimated max cost
 
-      if (!firecrawlApiKey) {
-        throw new Error('Firecrawl API key not configured');
-      }
-
-      // Call Firecrawl with x402-wrapped fetch
-      // The wrapper automatically:
-      // 1. Makes initial request
+      // Call API route (which forwards to Firecrawl with API key)
+      // The x402-wrapped fetch automatically:
+      // 1. Makes initial request to /api/test-firecrawl
       // 2. If 402 returned, creates and signs payment
       // 3. Retries request with X-PAYMENT header
-      const searchResponse = await fetchFunc(firecrawlEndpoint, {
+      // 4. API route adds Authorization header and forwards to Firecrawl
+      const searchResponse = await fetchFunc('/api/test-firecrawl', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${firecrawlApiKey}`,
         },
         body: JSON.stringify({
           query: topic.trim(),
-          limit: 5,
+          limit: 10,
           sources: ['web'],
           scrapeOptions: {
             onlyMainContent: true,
@@ -147,11 +174,44 @@ function ClientApp() {
 
       if (!searchResponse.ok) {
         const errorData = await searchResponse.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(`Firecrawl search failed: ${errorData.error || searchResponse.statusText}`);
+        const errorMsg = `Firecrawl search failed: ${errorData.error || searchResponse.statusText}`;
+        logPaymentError('Firecrawl', new Error(errorMsg));
+        throw new Error(errorMsg);
+      }
+
+      // Extract and log payment settlement from X-PAYMENT-RESPONSE header
+      const paymentResponseHeader = searchResponse.headers.get('X-PAYMENT-RESPONSE');
+      const txHash = extractTxHashFromPaymentResponse(paymentResponseHeader);
+
+      if (txHash) {
+        // Estimate actual cost based on typical Firecrawl pricing (~$0.01-0.05 per search)
+        logPaymentSettlement('Firecrawl', txHash, 0.03); // Estimated avg cost
+        // Add direct link for quick access
+        console.log(`[Client] 🔗 View transaction: https://basescan.org/tx/${txHash}`);
+      } else {
+        console.log('[Client] No payment required for Firecrawl (API key or free tier)');
       }
 
       const searchData = await searchResponse.json();
-      console.log('[Client] Firecrawl search successful, found', searchData?.data?.web?.length || 0, 'results');
+      const resultCount = searchData?.data?.web?.length || 0;
+      console.log('[Client] Firecrawl search successful, found', resultCount, 'results');
+
+      // Log detailed search results
+      if (resultCount > 0) {
+        console.log('[Client] Search Results:');
+        searchData.data.web.forEach((result: any, idx: number) => {
+          console.log(`  [${idx + 1}] ${result.title || 'Untitled'}`);
+          console.log(`      URL: ${result.url || 'N/A'}`);
+        });
+
+        // Log preview of first result
+        const firstResult = searchData.data.web[0];
+        const firstContent = firstResult.markdown || firstResult.content || '';
+        if (firstContent) {
+          const preview = firstContent.substring(0, 200).replace(/\n/g, ' ');
+          console.log(`[Client] First result preview: "${preview}..."`);
+        }
+      }
 
       // Format results as research text
       const webResults = searchData?.data?.web || [];
@@ -168,31 +228,41 @@ function ClientApp() {
 
       console.log('[Client] Research text length:', research.length, 'characters');
 
-      // Step 2: Start workflow with research results
-      console.log('[Client] Starting content generation workflow...');
-      const response = await fetch('/api/content/create', {
+      // Phase 1: Start script generation workflow
+      console.log('[Client] Phase 1: Starting script generation workflow...');
+      const scriptResponse = await fetch('/api/content/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: topic.trim(),
           userId: evmAddress,
           videoDuration: 10,
-          research, // Pass research results from Firecrawl
+          research,
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(errorData.error || `Request failed: ${response.status} ${response.statusText}`);
+      if (!scriptResponse.ok) {
+        const errorData = await scriptResponse.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `Request failed: ${scriptResponse.status} ${scriptResponse.statusText}`);
       }
 
-      const data = await response.json();
-      console.log('[Client] Workflow started:', data.runId);
+      const { runId: scriptRunId } = await scriptResponse.json();
+      console.log('[Client] Script workflow started:', scriptRunId);
 
-      setRunId(data.runId);
+      setRunId(scriptRunId);
 
-      // Stream workflow progress in real-time
-      streamProgress(data.runId);
+      // Stream script generation progress
+      streamProgress(scriptRunId);
+
+      // Poll for script completion
+      console.log('[Client] Polling for script completion...');
+      const scriptResult = await pollWorkflowUntilComplete(scriptRunId);
+
+      console.log('[Client] ✅ Script generated!');
+      console.log('[Client] Script:', scriptResult.script.substring(0, 100) + '...');
+
+      // Phase 2: Create video and start polling workflow
+      await createVideoAndStartPolling(scriptResult.script, scriptResult.research, fetchFunc);
     } catch (error) {
       console.error('[Client] Failed to create content:', error);
 
@@ -212,6 +282,44 @@ function ClientApp() {
     }
   };
 
+  // Helper: Poll workflow until completion
+  const pollWorkflowUntilComplete = async (runId: string): Promise<any> => {
+    const maxAttempts = 60; // 60 attempts * 2s = 2 minutes max for workflow completion check
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetch(`/api/content/status/${runId}`);
+        const data = await response.json();
+
+        // Debug logging to diagnose polling issue
+        console.log(`[Client] Poll attempt ${attempt}/${maxAttempts}`);
+        console.log(`[Client] Status: ${data.status}`);
+        console.log(`[Client] Has result: ${!!data.result}`);
+        if (data.result) {
+          console.log(`[Client] Result type: ${typeof data.result}`);
+          console.log(`[Client] Result keys:`, Object.keys(data.result));
+        }
+
+        if (data.status === 'completed' && data.result) {
+          console.log('[Client] ✅ Workflow completed! Result:', data.result);
+          return data.result;
+        }
+
+        if (data.status === 'failed') {
+          throw new Error(data.error || 'Workflow failed');
+        }
+
+        // Still processing, wait before trying again
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second interval
+      } catch (error) {
+        console.error('[Client] Error polling workflow:', error);
+        throw error;
+      }
+    }
+
+    throw new Error('Workflow polling timeout');
+  };
+
   const streamProgress = async (runId: string) => {
     // Close any existing EventSource
     if (eventSourceRef.current) {
@@ -227,25 +335,13 @@ function ClientApp() {
 
     eventSource.onmessage = (event) => {
       try {
-        const update: ContentProgressUpdate = JSON.parse(event.data);
+        const update: ProgressUpdate = JSON.parse(event.data);
         console.log('[Client] Progress update:', update);
 
         setProgressUpdates((prev) => [...prev, update]);
 
-        // If workflow is completed, fetch final result
-        if (update.step === 'completed' && update.status === 'completed') {
-          console.log('[Client] Workflow completed, fetching final result');
-          fetchFinalResult(runId);
-          eventSource.close();
-        }
-
-        // If workflow failed, show error
-        if (update.step === 'failed' || update.status === 'failed') {
-          console.error('[Client] Workflow failed:', update.data?.error);
-          setError(update.data?.error || update.message || 'Workflow failed');
-          setLoading(false);
-          eventSource.close();
-        }
+        // Note: We don't handle completion here because we're using
+        // a separate polling mechanism after the workflow completes
       } catch (err) {
         console.error('[Client] Failed to parse progress update:', err);
       }
@@ -259,45 +355,38 @@ function ClientApp() {
     eventSource.onerror = (err) => {
       console.error('[Client] EventSource error:', err);
       eventSource.close();
-
-      // Fallback: fetch final result
-      setTimeout(() => {
-        fetchFinalResult(runId);
-      }, 1000);
     };
   };
 
-  // Phase 2: Generate video with Genbase Sora 2 (x402 payment)
-  const generateVideo = async (scriptText: string, researchText: string) => {
+  // Phase 2: Create video and start polling workflow
+  const createVideoAndStartPolling = async (script: string, research: string, fetchFunc: typeof fetch) => {
     try {
-      console.log('[Client] Starting Phase 2: Video generation');
+      console.log('[Client] Phase 2: Creating video with Genbase Sora 2');
+      console.log('[Client] Script received for video:', script);
+      console.log('[Client] Script length:', script.length, 'characters');
+      console.log('[Client] Research length:', research.length, 'characters');
 
-      setProgressUpdates((prev) => [
-        ...prev,
-        {
-          step: 'video_creation',
-          status: 'in_progress',
-          message: 'Creating video with Sora 2...',
-        },
-      ]);
+      // Verify script is not empty
+      if (!script || script.trim().length === 0) {
+        throw new Error('Script is empty - cannot create video');
+      }
 
-      // Use the x402-wrapped fetch from Phase 1
-      const fetchFunc = fetchFuncRef || fetch;
+      // Log payment initiation
+      logPaymentInitiation('Genbase Sora 2', 0.20); // Fixed cost: $0.20 per 10s video
 
-      const genbaseEndpoint = 'https://api.genbase.ai/api/video/create-sora2';
-
-      console.log('[Client] Calling Genbase Sora 2 API...');
-      console.log('[Client] Script length:', scriptText.length, 'characters');
-
-      // Call Genbase with x402-wrapped fetch
-      // No Authorization header needed - only X-PAYMENT (added by wrapper)
-      const videoResponse = await fetchFunc(genbaseEndpoint, {
+      // Call API route (which forwards to Genbase)
+      // The x402-wrapped fetch automatically:
+      // 1. Makes initial request to /api/genbase/create-video
+      // 2. If 402 returned, creates and signs payment
+      // 3. Retries request with X-PAYMENT header
+      // 4. API route forwards X-PAYMENT header to Genbase
+      const videoResponse = await fetchFunc('/api/genbase/create-video', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          prompt: scriptText,
+          prompt: script,
           model: 'sora-2',
           seconds: '10',
           size: '1280x720',
@@ -306,10 +395,29 @@ function ClientApp() {
 
       if (!videoResponse.ok) {
         const errorData = await videoResponse.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(`Video generation failed: ${errorData.error || videoResponse.statusText}`);
+        const errorMsg = `Video generation failed: ${errorData.error || videoResponse.statusText}`;
+        logPaymentError('Genbase Sora 2', new Error(errorMsg));
+        throw new Error(errorMsg);
+      }
+
+      // Extract and log payment settlement
+      const paymentResponseHeader = videoResponse.headers.get('X-PAYMENT-RESPONSE');
+      const txHash = extractTxHashFromPaymentResponse(paymentResponseHeader);
+
+      if (txHash) {
+        logPaymentSettlement('Genbase Sora 2', txHash, 0.20);
+        // Add direct link for quick access
+        console.log(`[Client] 🔗 View transaction: https://basescan.org/tx/${txHash}`);
+      } else {
+        console.log('[Client] No payment required for Genbase (API key or free tier)');
       }
 
       const videoData = await videoResponse.json();
+      console.log('[Client] Genbase response:', {
+        success: videoData.success,
+        taskId: videoData.data?.id,
+        status: videoData.data?.status
+      });
 
       if (!videoData.success || !videoData.data?.id) {
         throw new Error('Genbase API returned invalid response');
@@ -318,22 +426,43 @@ function ClientApp() {
       const taskId = videoData.data.id;
       console.log('[Client] Video task created:', taskId);
 
-      setProgressUpdates((prev) => [
-        ...prev,
-        {
-          step: 'video_creation',
-          status: 'completed',
-          message: 'Video generation started',
-          data: { videoTaskId: taskId },
-        },
-      ]);
+      // Start video polling workflow
+      console.log('[Client] Starting video polling workflow...');
+      const pollResponse = await fetch('/api/content/video-poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, script, research }),
+      });
 
-      // Start polling for video completion
-      await pollVideoStatus(taskId, scriptText, researchText);
+      if (!pollResponse.ok) {
+        throw new Error(`Failed to start video polling: ${pollResponse.statusText}`);
+      }
+
+      const { runId: pollRunId } = await pollResponse.json();
+      console.log('[Client] Video polling workflow started:', pollRunId);
+
+      // Stream progress for video polling
+      streamProgress(pollRunId);
+
+      // Poll for final video result
+      const videoResult = await pollWorkflowUntilComplete(pollRunId);
+
+      console.log('[Client] ✅ Video ready!', videoResult.videoUrl);
+
+      // Set final result
+      setResult({
+        videoUrl: videoResult.videoUrl,
+        script: videoResult.script,
+        research: videoResult.research,
+        thumbnailUrl: videoResult.thumbnailUrl,
+        totalCostUSD: 0.25, // ~$0.05 search + $0.20 video
+      });
+
+      setLoading(false);
     } catch (error) {
-      console.error('[Client] Video generation failed:', error);
+      console.error('[Client] Failed to create video:', error);
 
-      let errorMessage = 'Failed to generate video';
+      let errorMessage = 'Failed to create video';
       if (error instanceof Error) {
         if (error.message.includes('rejected')) {
           errorMessage = 'Video payment was rejected';
@@ -345,157 +474,6 @@ function ClientApp() {
       }
 
       setError(errorMessage);
-      setLoading(false);
-    }
-  };
-
-  // Poll Genbase video status (FREE - no payment required)
-  const pollVideoStatus = async (taskId: string, scriptText: string, researchText: string) => {
-    const maxAttempts = 30; // 30 attempts * 30s = 15 minutes max
-    const pollInterval = 30000; // 30 seconds
-
-    console.log('[Client] Starting video polling:', taskId);
-
-    setProgressUpdates((prev) => [
-      ...prev,
-      {
-        step: 'video_polling',
-        status: 'in_progress',
-        message: 'Generating video... This may take 3-10 minutes',
-        data: {
-          pollingAttempt: 1,
-          pollingMaxAttempts: maxAttempts,
-          estimatedWaitSeconds: 180, // 3 minutes minimum
-        },
-      },
-    ]);
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const queryEndpoint = `https://api.genbase.ai/api/video/query?id=${taskId}`;
-        const statusResponse = await fetch(queryEndpoint);
-
-        if (!statusResponse.ok) {
-          throw new Error(`Status check failed: ${statusResponse.statusText}`);
-        }
-
-        const statusData = await statusResponse.json();
-
-        if (!statusData.success || !statusData.data) {
-          throw new Error('Invalid status response from Genbase');
-        }
-
-        const { status, video_url, thumbnail_url, error: videoError } = statusData.data;
-
-        console.log(`[Client] Polling attempt ${attempt}/${maxAttempts} - Status: ${status}`);
-
-        // Map status to progress percentage
-        const progressPercent =
-          status === 'pending'
-            ? '20%'
-            : status === 'processing'
-            ? '50%'
-            : status === 'video_upsampling'
-            ? '80%'
-            : 'Unknown';
-
-        // Update progress
-        setProgressUpdates((prev) => [
-          ...prev.slice(0, -1), // Remove last polling update
-          {
-            step: 'video_polling',
-            status: 'in_progress',
-            message: `Generating video... (${progressPercent})`,
-            data: {
-              pollingAttempt: attempt,
-              pollingMaxAttempts: maxAttempts,
-              videoStatus: status,
-              videoProgress: progressPercent,
-            },
-          },
-        ]);
-
-        // Check if video is ready
-        if (status === 'Ready' || status === 'completed') {
-          console.log('[Client] ✅ Video ready:', video_url);
-
-          setProgressUpdates((prev) => [
-            ...prev.slice(0, -1),
-            {
-              step: 'video_polling',
-              status: 'completed',
-              message: 'Video ready!',
-              data: {
-                videoUrl: video_url,
-                thumbnailUrl: thumbnail_url,
-              },
-            },
-          ]);
-
-          // Set final result
-          setResult({
-            videoUrl: video_url,
-            script: scriptText,
-            research: researchText,
-            totalCostUSD: 0.25, // ~$0.05 search + $0.20 video
-          });
-
-          setLoading(false);
-          return;
-        }
-
-        // Check if video generation failed
-        if (status === 'failed') {
-          throw new Error(videoError || 'Video generation failed');
-        }
-
-        // Wait before next poll (except on last attempt)
-        if (attempt < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, pollInterval));
-        }
-      } catch (error) {
-        console.error('[Client] Polling error:', error);
-
-        setError(error instanceof Error ? error.message : 'Failed to check video status');
-        setLoading(false);
-        return;
-      }
-    }
-
-    // Timeout after max attempts
-    console.error('[Client] Video generation timed out after', maxAttempts, 'attempts');
-    setError(`Video generation timed out after ${maxAttempts * pollInterval / 1000 / 60} minutes`);
-    setLoading(false);
-  };
-
-  const fetchFinalResult = async (runId: string) => {
-    try {
-      const response = await fetch(`/api/content/status/${runId}`);
-      const data = await response.json();
-
-      if (data.status === 'completed' && data.result) {
-        console.log('[Client] Phase 1 complete - Script generated');
-        console.log('[Client] Script:', data.result.script?.substring(0, 100) + '...');
-
-        // Store script and research from Phase 1
-        const scriptText = data.result.script || '';
-        const researchText = data.result.research || '';
-
-        setScript(scriptText);
-        setResearch(researchText);
-
-        // Start Phase 2: Video generation with Genbase x402
-        await generateVideo(scriptText, researchText);
-      } else if (data.status === 'failed') {
-        setError(data.error || 'Workflow failed');
-        setLoading(false);
-      } else {
-        // Still processing, try again
-        setTimeout(() => fetchFinalResult(runId), 2000);
-      }
-    } catch (error) {
-      console.error('[Client] Failed to fetch final result:', error);
-      setError('Failed to retrieve final result');
       setLoading(false);
     }
   };
@@ -632,32 +610,19 @@ function ClientApp() {
                               </p>
                               {update.data && (
                                 <div className="mt-1 text-xs text-muted-foreground space-y-0.5">
-                                  {update.data.searchResultsCount !== undefined && (
+                                  {'searchResultsCount' in update.data && update.data.searchResultsCount !== undefined && (
                                     <p>Found {update.data.searchResultsCount} sources</p>
                                   )}
-                                  {update.data.scriptLength !== undefined && (
+                                  {'scriptLength' in update.data && update.data.scriptLength !== undefined && (
                                     <p>Script: {update.data.scriptLength} characters</p>
                                   )}
-                                  {update.data.videoTaskId && (
+                                  {'videoTaskId' in update.data && update.data.videoTaskId && (
                                     <p className="font-mono">Task: {update.data.videoTaskId.slice(0, 20)}...</p>
                                   )}
-                                  {update.data.pollingAttempt !== undefined && (
+                                  {'pollingAttempt' in update.data && update.data.pollingAttempt !== undefined && (
                                     <p>
                                       Attempt {update.data.pollingAttempt}/{update.data.pollingMaxAttempts}
                                       {update.data.videoProgress && ` - ${update.data.videoProgress}`}
-                                    </p>
-                                  )}
-                                  {update.data.paymentTx && (
-                                    <p className="font-mono">
-                                      Payment TX:{' '}
-                                      <a
-                                        href={`https://basescan.org/tx/${update.data.paymentTx}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-primary hover:underline"
-                                      >
-                                        {update.data.paymentTx.slice(0, 10)}...
-                                      </a>
                                     </p>
                                   )}
                                 </div>

@@ -109,6 +109,8 @@ export async function POST(request: Request) {
     console.log('[API] Starting content generation workflow');
     console.log('[API] Topic:', sanitizedTopic);
     console.log('[API] Research length:', research.length, 'characters');
+    console.log('[API] Note: x402 payments for Firecrawl and Genbase are handled client-side');
+    console.log('[API] Check browser console for payment settlement logs');
 
     // Start the workflow, passing sanitized inputs
     const { runId } = await start(contentGeneratorWorkflow, [
