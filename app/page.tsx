@@ -284,21 +284,12 @@ function ClientApp() {
 
   // Helper: Poll workflow until completion
   const pollWorkflowUntilComplete = async (runId: string): Promise<any> => {
-    const maxAttempts = 60; // 60 attempts * 2s = 2 minutes max for workflow completion check
+    const maxAttempts = 90; // 90 attempts * 20s = 30 minutes max (enough for video generation)
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const response = await fetch(`/api/content/status/${runId}`);
         const data = await response.json();
-
-        // Debug logging to diagnose polling issue
-        console.log(`[Client] Poll attempt ${attempt}/${maxAttempts}`);
-        console.log(`[Client] Status: ${data.status}`);
-        console.log(`[Client] Has result: ${!!data.result}`);
-        if (data.result) {
-          console.log(`[Client] Result type: ${typeof data.result}`);
-          console.log(`[Client] Result keys:`, Object.keys(data.result));
-        }
 
         if (data.status === 'completed' && data.result) {
           console.log('[Client] ✅ Workflow completed! Result:', data.result);
@@ -310,14 +301,19 @@ function ClientApp() {
         }
 
         // Still processing, wait before trying again
-        await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second interval
+        // Log every 10th attempt to avoid spam (every 200 seconds = ~3.3 minutes)
+        if (attempt % 10 === 0) {
+          console.log(`[Client] Waiting for workflow... (${attempt}/${maxAttempts} checks, ${data.status})`);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 20000)); // 20 second interval
       } catch (error) {
         console.error('[Client] Error polling workflow:', error);
         throw error;
       }
     }
 
-    throw new Error('Workflow polling timeout');
+    throw new Error('Workflow polling timeout after 30 minutes');
   };
 
   const streamProgress = async (runId: string) => {

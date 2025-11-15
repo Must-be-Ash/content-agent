@@ -174,31 +174,32 @@ export async function generateScript(params: {
 
   const result = await generateText({
     model: 'openai/gpt-4o',
-    prompt: `You are a UGC content creator making viral Instagram Reels and TikToks. Generate a ${params.duration}-second UGC-style video prompt about "${params.topic}" that will be used to generate an AI video with Sora 2.
+    prompt: `You are a friend explaining something interesting you just learned. Generate a ${params.duration}-second TikTok-style UGC video prompt about "${params.topic}" that will be used to generate an AI video with Sora 2.
 
 Research findings to incorporate:
 ${params.research}
 
-UGC Video Style Requirements:
-- First-person POV or creator-facing camera (selfie mode)
-- Handheld, mobile-shot aesthetic (NOT professional production)
-- Authentic, casual TikTok/Instagram Reel vibe
-- Fast-paced with quick cuts and dynamic movements
-- Visual storytelling that shows research insights (not just tells)
-- Hook viewers immediately with engaging visual or action
-- Show real screens, devices, apps, or interfaces when relevant
-- Include creator reactions and expressions (excitement, surprise, realization)
-
-Content Requirements:
-- Synthesize the key research findings into visual scenes
-- Make complex topics digestible and engaging
-- Use visual metaphors and real-world examples
-- Keep it dynamic - no static shots
+CRITICAL Requirements:
+- ONLY ONE PERSON on screen talking directly to the camera (selfie mode)
+- NO screens, devices, laptops, phones, or other objects visible
+- Just a person in a natural setting (bedroom, living room, kitchen, etc.) talking
+- Handheld, mobile-shot aesthetic (authentic TikTok/Instagram Reel vibe)
+- Natural, conversational tone - like explaining to a friend, NOT selling anything
+- Organic and genuine - avoid any salesy or promotional language
+- Person should be explaining the research insights in their own words
+- Include natural gestures, expressions, and reactions as they explain
+- Keep it dynamic with natural movements and slight camera movements
 - Format: Single paragraph prompt describing what the camera sees
 
-Example UGC Prompt: "A creator in a cozy bedroom holds their phone in selfie mode, eyes wide with excitement as they say 'Wait till you see THIS.' Quick cut to close-up of their phone screen showing a crypto wallet interface with USDC balance. Camera flips to show their laptop displaying code and payment flows. Handheld pan across sticky notes on the wall with key concepts. Cut back to selfie mode as creator does a 'mind-blown' gesture. Fast transition to split-screen showing before/after comparison. Final shot: creator holds phone to camera showing the result, nodding enthusiastically."
+Tone Guidelines:
+- Friendly and approachable, like sharing something cool you discovered
+- Educational but casual - "I found out that..." or "So here's what's interesting..."
+- Avoid: "You need to know", "This will change everything", "Don't miss out"
+- Use: "I was researching...", "Turns out...", "Here's what I learned..."
 
-Generate a UGC video prompt that naturally explains these research insights through authentic, engaging visual storytelling:`,
+Example UGC Prompt: "A person sits casually on their bed, speaking directly to the camera with genuine curiosity. The camera is positioned at eye level, creating that authentic selfie-style TikTok perspective. They start by saying 'Okay so I was looking into this thing and it's actually pretty interesting.' As they explain, they use natural hand gestures to emphasize points. The camera slightly moves as they shift positions, creating that authentic handheld feel. Their expressions change from curiosity to realization as they break down the key points. They occasionally pause to think, then continue explaining in a conversational, friendly way. The lighting is natural, like from a window or room light. Throughout, it's just them talking - no screens, no devices visible, just a person sharing what they learned in a natural, organic way."
+
+Generate a UGC video prompt that feels like a friend naturally explaining these research insights - organic, genuine, and educational without being salesy:`,
   });
 
   return result.text;
@@ -237,7 +238,7 @@ export async function createSora2Video(params: {
   // Genbase Sora 2 request body
   const requestBody = {
     prompt: params.script,
-    model: 'sora-2', // Standard quality (not sora-2-pro)
+    model: 'sora-2', // Enhanced quality, up to 10 seconds
     seconds: params.duration.toString(), // "10", "15", or "25"
     size: '1280x720', // 720p landscape (other options: 720x1280, 1792x1024, 1024x1792)
   };

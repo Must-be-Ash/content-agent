@@ -68,12 +68,14 @@ export async function videoPollWorkflow(
     data: {
       videoTaskId: taskId,
       pollingAttempt: 1,
-      pollingMaxAttempts: 30,
+      pollingMaxAttempts: 8,
       estimatedWaitSeconds: 180, // 3 minutes minimum
     },
   });
 
-  const maxAttempts = 30; // 30 attempts * 30s = 15 minutes max
+  const maxAttempts = 8; // 8 attempts * 2 min = 16 minutes max
+
+  let lastStatus = '';
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[VideoPoll Workflow] Polling attempt ${attempt}/${maxAttempts}`);
@@ -92,18 +94,22 @@ export async function videoPollWorkflow(
         ? '80%'
         : 'Unknown';
 
-    await writeProgress(progress, {
-      step: 'video_polling',
-      status: 'in_progress',
-      message: `Generating video... (${progressPercent})`,
-      data: {
-        videoTaskId: taskId,
-        pollingAttempt: attempt,
-        pollingMaxAttempts: maxAttempts,
-        videoStatus: status.status,
-        videoProgress: progressPercent,
-      },
-    });
+    // Only send progress update if status changed (avoid spamming UI)
+    if (status.status !== lastStatus) {
+      await writeProgress(progress, {
+        step: 'video_polling',
+        status: 'in_progress',
+        message: `Generating video... (${progressPercent})`,
+        data: {
+          videoTaskId: taskId,
+          pollingAttempt: attempt,
+          pollingMaxAttempts: maxAttempts,
+          videoStatus: status.status,
+          videoProgress: progressPercent,
+        },
+      });
+      lastStatus = status.status;
+    }
 
     // Check if video is ready
     if (status.status === 'Ready' || status.status === 'completed') {
@@ -147,9 +153,9 @@ export async function videoPollWorkflow(
       throw new Error(status.error || 'Video generation failed');
     }
 
-    // Wait 30 seconds before next poll (except on last attempt)
+    // Wait 2 minutes before next poll (except on last attempt)
     if (attempt < maxAttempts) {
-      await sleep('30s'); // Zero compute cost
+      await sleep('2m'); // Zero compute cost - workflow paused for 2 minutes
     }
   }
 
