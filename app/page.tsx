@@ -236,7 +236,7 @@ function ClientApp() {
         body: JSON.stringify({
           topic: topic.trim(),
           userId: evmAddress,
-          videoDuration: 10,
+          videoDuration: 25,
           research,
         }),
       });
@@ -383,8 +383,8 @@ function ClientApp() {
         },
         body: JSON.stringify({
           prompt: script,
-          model: 'sora-2',
-          seconds: '10',
+          model: 'sora-2-pro',
+          seconds: '25',
           size: '1280x720',
         }),
       });
@@ -653,25 +653,25 @@ function ClientApp() {
                     </div>
 
                     <div className="grid gap-6 sm:grid-cols-2">
-                      <div className="space-y-3">
+                      <div className="space-y-3 min-w-0">
                         <h3 className="font-semibold text-lg flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
                           Script
                         </h3>
-                        <div className="p-4 rounded-lg bg-muted/50 border">
-                          <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                        <div className="p-3 sm:p-4 rounded-lg bg-muted/50 border overflow-hidden">
+                          <p className="text-sm whitespace-pre-wrap leading-relaxed break-words overflow-wrap-anywhere">
                             {result.script}
                           </p>
                         </div>
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="space-y-3 min-w-0">
                         <h3 className="font-semibold text-lg flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
                           Research
                         </h3>
-                        <div className="p-4 rounded-lg bg-muted/50 border max-h-64 overflow-y-auto">
-                          <p className="text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-3 sm:p-4 rounded-lg bg-muted/50 border max-h-64 overflow-y-auto overflow-x-hidden">
+                          <p className="text-sm text-muted-foreground leading-relaxed break-words overflow-wrap-anywhere">
                             {result.research}
                           </p>
                         </div>

@@ -199,13 +199,13 @@ interface MobileWalletProps extends MobileWalletContentProps {}
 function MobileWallet(props: MobileWalletProps) {
   return (
     <div
-      className="block sm:hidden fixed bottom-24 right-4 z-50"
+      className="block sm:hidden fixed bottom-24 left-4 z-50"
       style={{ maxWidth: 'calc(100vw - 2rem)' }}
     >
       <Component expandDirection="both" expandBehavior="replace" initialDelay={0.1}>
         {() => (
           <ExpandableTrigger>
-            <div className="flex flex-col-reverse items-end" style={{ transformOrigin: 'bottom right' }}>
+            <div className="flex flex-col-reverse items-start" style={{ transformOrigin: 'bottom left' }}>
               <ExpandableCard
                 className="w-auto"
                 collapsedSize={{ width: 150, height: 44 }}

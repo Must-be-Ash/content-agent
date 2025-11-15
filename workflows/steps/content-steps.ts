@@ -238,7 +238,7 @@ export async function createSora2Video(params: {
   // Genbase Sora 2 request body
   const requestBody = {
     prompt: params.script,
-    model: 'sora-2', // Enhanced quality, up to 10 seconds
+    model: 'sora-2-pro', // Enhanced quality, up to 10 seconds
     seconds: params.duration.toString(), // "10", "15", or "25"
     size: '1280x720', // 720p landscape (other options: 720x1280, 1792x1024, 1024x1792)
   };
