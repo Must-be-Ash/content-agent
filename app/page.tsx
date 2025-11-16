@@ -236,7 +236,7 @@ function ClientApp() {
         body: JSON.stringify({
           topic: topic.trim(),
           userId: evmAddress,
-          videoDuration: 25,
+          videoDuration: 15,
           research,
         }),
       });
@@ -383,8 +383,8 @@ function ClientApp() {
         },
         body: JSON.stringify({
           prompt: script,
-          model: 'sora-2-pro',
-          seconds: '25',
+          model: 'sora-2',
+          seconds: '15',
           size: '1280x720',
         }),
       });

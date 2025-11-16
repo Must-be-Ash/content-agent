@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       genbaseHeaders['X-PAYMENT'] = paymentHeader;
     }
 
-    const genbaseEndpoint = process.env.GENBASE_API_URL || 'https://api.genbase.ai';
+    const genbaseEndpoint = process.env.GENBASE_API_URL || 'https://www.genbase.fun';
     const createVideoEndpoint = `${genbaseEndpoint}/api/video/create-sora2`;
 
     console.log('[Genbase] Calling Genbase Sora 2 video creation endpoint:', createVideoEndpoint);
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const requestBody = {
       prompt,
       model: model || 'sora-2',
-      seconds: seconds || '10',
+      duration: seconds || '15',  // Genbase API expects 'duration' not 'seconds'
       size: size || '1280x720',
     };
 

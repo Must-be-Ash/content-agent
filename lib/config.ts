@@ -14,7 +14,7 @@ export const FIRECRAWL_CONFIG = {
 
 // Genbase Sora 2 Configuration
 export const GENBASE_CONFIG = {
-  apiUrl: process.env.GENBASE_API_URL ?? 'https://api.genbase.ai',
+  apiUrl: process.env.GENBASE_API_URL ?? 'https://www.genbase.fun',
 };
 
 // x402 Network Configuration

@@ -163,7 +163,7 @@ const response = await axios.post(endpoint, body, { headers });
 ## Genbase Sora 2 API
 
 ### Create Video (Paid via x402)
-**POST** `https://api.genbase.ai/api/video/create-sora2`
+**POST** `https://www.genbase.fun/api/video/create-sora2`
 - **Cost**: $0.20 USDC per 10s video
 - **Headers**: `X-PAYMENT` (from x402-fetch wrapper)
 - **Body**: `{ prompt, model: "sora-2", seconds: "10", size: "1280x720" }`
@@ -171,7 +171,7 @@ const response = await axios.post(endpoint, body, { headers });
 - **Status progression**: pending → processing → video_upsampling → Ready
 
 ### Query Video Status (FREE)
-**GET** `https://api.genbase.ai/api/video/query?id=<task_id>`
+**GET** `https://www.genbase.fun/api/video/query?id=<task_id>`
 - **Cost**: FREE (no payment required, unlimited polling)
 - **Returns**: `{ data: { status, video_url, thumbnail_url } }`
 - **Generation time**: 3-10 minutes
