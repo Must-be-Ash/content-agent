@@ -144,5 +144,3 @@ Status Values:
 • Ready or completed - Ready to watch (Progress: 100%)
 • failed - Generation failed
 \
-note that we will be using:
-"model": "sora-2-pro", "duration": "25", "size": "1280x720" and need to pay $0.2 USDC 

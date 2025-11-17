@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const requestBody = {
       prompt,
       model: model || 'sora-2',
-      duration: seconds || '15',  // Genbase API expects 'duration' not 'seconds'
+      seconds: seconds || '15',  // Genbase API expects 'seconds' in request
       size: size || '1280x720',
     };
 

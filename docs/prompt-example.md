@@ -40,4 +40,25 @@ Instead of API keys and subscriptions, an AI can just pay a few cents in USDC pe
 Latest news? It just did almost 500k payments in a week after a 10,000% usage spike… but security firms also found a bunch of shady x402-themed tokens and even a bridge exploit hitting 200+ wallets.
 
 [0:22-0:25] (points at camera)
-So: x402 = real infra, x402 meme coins = DYOR. If you’re building with AI or APIs, test it with tiny amounts first and don’t ape into random “x402” tokens.
+So: x402 = real infra, x402 meme coins = DYOR. If you’re building with AI or APIs, test it with tiny amounts first and don’t ape into random "x402" tokens.
+
+/////////
+
+[0:00-0:04] (sits casually, speaking directly to camera with genuine curiosity)
+Okay so I was researching this thing called x402 and honestly? It's actually pretty interesting.
+
+[0:04-0:09] (uses hand gestures, explaining naturally)
+So basically, x402 is this new payment protocol that lets AI agents and websites pay for things automatically using crypto. Like, imagine your AI assistant could just pay a few cents to get data from an API without you having to set up subscriptions or API keys.
+
+[0:09-0:15] (leans forward, more animated)
+It's built on this old HTTP status code - 402, which means "Payment Required" - but now it actually works. So when an AI needs something, it can just pay in USDC on the Base network, get what it needs instantly, and move on. No credit cards, no signups, just micropayments.
+
+[0:15-0:20] (nods, thoughtful)
+The cool part? Coinbase and Cloudflare are backing it, and it's already processing hundreds of thousands of payments. But here's the thing - there are also a lot of scam tokens using the x402 name, so you gotta be careful.
+
+[0:20-0:25] (friendly, direct)
+If you're building AI tools or working with APIs, definitely check it out. It could change how we think about paying for services online. Just make sure you're looking at the real protocol, not random meme coins.
+
+/////////
+
+A person sits casually on their living room couch, speaking directly to the camera with genuine curiosity. The camera is positioned at eye level, creating that authentic selfie-style TikTok perspective. They start by saying "Okay so I was researching this thing called x402 and honestly? It's actually pretty interesting." As they explain, they use natural hand gestures to emphasize points, occasionally shrugging as they talk about how confusing the space can be. The camera slightly moves as they shift positions, creating that authentic handheld feel. Their expressions change from curiosity to understanding as they break down how x402 turns the old HTTP 402 error code into actual working crypto payments for AI agents. They nod thoughtfully when explaining that it's already processing hundreds of thousands of payments on Base network with super low fees. Their expression becomes more serious as they warn about scam tokens using the x402 name, pointing at the camera to emphasize the importance of being careful. They occasionally pause to think, then continue explaining in a conversational, friendly way. The lighting is natural, like from a window or room light. Throughout, it's just them talking - no screens, no devices visible, just a person sharing what they learned about x402 in a natural, organic way.

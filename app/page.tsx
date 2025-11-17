@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import { ConfirmModal } from '@/components/confirm-modal';
+import { WorkflowStatusInfo } from '@/components/workflow-status-info';
 import type { ContentProgressUpdate } from '@/workflows/content-generator';
 import type { VideoPollProgressUpdate } from '@/workflows/video-poll';
 import {
@@ -63,6 +65,9 @@ function ClientApp() {
   const [result, setResult] = useState<ContentResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progressUpdates, setProgressUpdates] = useState<ProgressUpdate[]>([]);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [genbaseTaskId, setGenbaseTaskId] = useState<string | null>(null);
+  const [genbaseTxHash, setGenbaseTxHash] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Cleanup EventSource on unmount
@@ -89,9 +94,18 @@ function ClientApp() {
     e.preventDefault();
     if (!topic.trim() || !evmAddress) return;
 
+    // Open confirmation modal instead of immediately processing
+    setIsConfirmModalOpen(true);
+  };
+
+  const handleConfirm = async () => {
+    if (!topic.trim() || !evmAddress) return;
+
     setLoading(true);
     setError(null);
     setResult(null);
+    setGenbaseTaskId(null);
+    setGenbaseTxHash(null);
 
     try {
       console.log('[Client] Starting content generation for topic:', topic);
@@ -422,6 +436,12 @@ function ClientApp() {
       const taskId = videoData.data.id;
       console.log('[Client] Video task created:', taskId);
 
+      // Store Genbase task ID and transaction hash for user reference
+      setGenbaseTaskId(taskId);
+      if (txHash) {
+        setGenbaseTxHash(txHash);
+      }
+
       // Start video polling workflow
       console.log('[Client] Starting video polling workflow...');
       const pollResponse = await fetch('/api/content/video-poll', {
@@ -483,11 +503,22 @@ function ClientApp() {
           <AuroraBackground className="min-h-screen items-start justify-start overflow-y-auto">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-20 max-w-4xl w-full">
               {/* Header Section */}
-              <div className="text-center mb-12 sm:mb-16">
-                <p className="text-muted-foreground text-sm sm:text-base max-w-md mx-auto">
-                  An autonomous AI agent that generates content. It uses x402 to pay for services it needs (Firecrawl for web search and Sora for video generation) to execute the workflow. Powered by Embedded Wallets (CDP) and Vercel's Workflow Kit.
-                </p>
-              </div>
+              {!loading && (
+                <div className="text-center mb-12 sm:mb-16">
+                  <p className="text-muted-foreground text-sm sm:text-base max-w-md mx-auto">
+                    An autonomous AI agent that generates content. It uses x402 to pay for services it needs (Firecrawl for web search and Sora for video generation) to execute the workflow. Powered by Embedded Wallets (CDP) and Vercel's Workflow Kit.
+                  </p>
+                </div>
+              )}
+
+              {/* Workflow Status Info - Shown during generation */}
+              {loading && (genbaseTaskId || genbaseTxHash) && (
+                <WorkflowStatusInfo
+                  genbaseTaskId={genbaseTaskId}
+                  transactionHash={genbaseTxHash}
+                  walletAddress={evmAddress}
+                />
+              )}
 
               {/* Main Form Card */}
               <Card className="border-2 shadow-xl">
@@ -689,6 +720,14 @@ function ClientApp() {
               )}
             </div>
           </AuroraBackground>
+
+          {/* Confirmation Modal */}
+          <ConfirmModal
+            isOpen={isConfirmModalOpen}
+            onClose={() => setIsConfirmModalOpen(false)}
+            onConfirm={handleConfirm}
+            cost="$0.25"
+          />
         </>
       )}
     </>
