@@ -33,5 +33,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "content-agent-docs"]
+  "exclude": ["node_modules", "workflow-docs"]
 }

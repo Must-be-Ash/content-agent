@@ -215,25 +215,16 @@ export async function createSora2Video(params: {
   "use step";
 
   const genbaseApiUrl = process.env.GENBASE_API_URL || 'https://api.genbase.ai';
-  const genbaseApiKey = process.env.GENBASE_API_KEY;
   const endpoint = `${genbaseApiUrl}/api/video/create-sora2`;
 
   console.log('[Genbase] Creating Sora 2 video...');
   console.log('[Genbase] Duration:', params.duration, 'seconds');
   console.log('[Genbase] Prompt length:', params.script.length, 'characters');
 
-  // Prepare headers with API key
+  // Prepare headers (Genbase uses x402 payments, no API key needed)
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-
-  // Add API key if available
-  if (genbaseApiKey) {
-    headers['Authorization'] = `Bearer ${genbaseApiKey}`;
-    console.log('[Genbase] Using API key authentication');
-  } else {
-    console.log('[Genbase] No API key - request may fail');
-  }
 
   // Genbase Sora 2 request body
   const requestBody = {
