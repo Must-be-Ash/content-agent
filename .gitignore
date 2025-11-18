@@ -46,3 +46,10 @@ next-env.d.ts
 # workflow docs
 workflow-docs/workflow-repo
 workflow-docs/workflow-examples
+
+# docs
+docs
+
+# Direct OpenAI Sora integration (dev only, not for production)
+app/sora/
+app/api/sora/
