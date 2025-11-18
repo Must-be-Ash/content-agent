@@ -324,9 +324,9 @@ content-agent/
 
 | Service | Cost | Payment Method | Timing |
 |---------|------|----------------|--------|
-| **Firecrawl Search** | $0.01-0.05 | x402 on Base | Before Phase 1 |
-| **Script Generation** | Free* | AI Gateway | During Phase 1 |
-| **Genbase Video (10s)** | $0.20 | x402 on Base | Before Phase 2 |
+| **Firecrawl Search** | ~$0.03 | x402 on Base | Before Phase 1 |
+| **Script Generation** | ~$0.01 | AI Gateway | During Phase 1 |
+| **Genbase Video (15s)** | $0.20 | x402 on Base | Before Phase 2 |
 | **Video Polling** | Free | No auth | During Phase 2 |
 | **Total per video** | **~$0.25** | | |
 
@@ -449,6 +449,7 @@ vercel deploy
 - [x402 Protocol Spec](https://www.x402.org)
 - [CDP Documentation](https://docs.cdp.coinbase.com)
 - [Genbase Documentation](https://www.genbase.fun)
+- [More Projects](https://cdpcollection.com)
 
 ## License
 
