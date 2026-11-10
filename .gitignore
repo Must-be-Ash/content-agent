@@ -53,3 +53,4 @@ docs
 # Direct OpenAI Sora integration (dev only, not for production)
 app/sora/
 app/api/sora/
+/.swc
