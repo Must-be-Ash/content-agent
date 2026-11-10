@@ -45,9 +45,8 @@ cp .env.example .env.local
 # CDP (Coinbase Developer Platform)
 NEXT_PUBLIC_CDP_PROJECT_ID=your_cdp_project_id
 
-# Firecrawl x402 API
-FIRECRAWL_API_BASE_URL=https://api.firecrawl.dev/v2/x402/search
-FIRECRAWL_API_KEY=your_firecrawl_api_key
+# Firecrawl search via StableEnrich x402 (optional override, no API key needed)
+X402_SEARCH_URL=https://stableenrich.dev/api/firecrawl/search
 
 # Genbase
 GENBASE_API_URL=https://www.genbase.fun

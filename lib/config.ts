@@ -5,11 +5,9 @@ export const CDP_CONFIG = {
   apiKeySecret: process.env.CDP_API_KEY_SECRET ?? '',
 };
 
-// Firecrawl Configuration
+// Firecrawl search via StableEnrich (x402, no API key)
 export const FIRECRAWL_CONFIG = {
-  apiBaseUrl: process.env.FIRECRAWL_API_BASE_URL ?? 'https://api.firecrawl.dev/v2/x402/search',
-  apiKey: process.env.FIRECRAWL_API_KEY ?? '',
-  network: process.env.FIRECRAWL_NETWORK ?? 'base',
+  apiBaseUrl: process.env.X402_SEARCH_URL ?? 'https://stableenrich.dev/api/firecrawl/search',
 };
 
 // Genbase Sora 2 Configuration

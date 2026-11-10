@@ -196,11 +196,11 @@ for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 
 ## Firecrawl API (x402)
 
-**POST** `https://api.firecrawl.dev/v2/x402/search`
-- **Cost**: ~$0.01-0.05 USDC per search
-- **Headers**: `Authorization: Bearer ${FIRECRAWL_API_KEY}`, `PAYMENT-SIGNATURE` / `X-PAYMENT` (forwarded)
-- **Body**: `{ query, limit, sources: ['web'], scrapeOptions: { onlyMainContent: true } }`
-- **Returns**: `{ data: { web: [{ title, url, markdown }] } }`
+**POST** `https://stableenrich.dev/api/firecrawl/search` (StableEnrich; Firecrawl's own x402 endpoint was retired)
+- **Cost**: ~$0.025 USDC per search
+- **Headers**: `PAYMENT-SIGNATURE` (forwarded), no API key
+- **Body**: `{ query, limit }` (limit 1-10)
+- **Returns**: `{ results: [{ title, url, description, snippet }] }`; `/api/test-firecrawl` normalizes this to `{ data: { web: [{ title, url, markdown }] } }`
 
 ## Next.js + Workflow Integration
 
@@ -320,5 +320,5 @@ npx workflow inspect runs --web    # Web UI
   /Users/ashnouruzi/content-agent/WORKFLOW_QUICK_REFERENCE.md
   /Users/ashnouruzi/content-agent/workflow.md
 - we are using 'pnpm' not 'npm'
-- we are using https://api.firecrawl.dev/v2/x402/search set as FIRECRAWL_API_BASE_URL in .env which is the x402 endpoint for firecrawl. we have FIRECRAWL_API_KEY that we need to use in the payment header of the x402 firecrawl call.
+- web search uses StableEnrich's x402 Firecrawl proxy (https://stableenrich.dev/api/firecrawl/search, override with X402_SEARCH_URL). No Firecrawl API key needed.
 - Follow this functional code example /Users/ashnouruzi/firecrawl-402demo EXACTLY for setting up Firecrawl using x402

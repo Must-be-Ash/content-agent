@@ -9,22 +9,13 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, limit, sources, scrapeOptions } = body;
+    const { query, limit } = body;
 
     // Validate required fields
     if (!query) {
       return NextResponse.json(
         { error: 'Query is required' },
         { status: 400 }
-      );
-    }
-
-    // Check for Firecrawl API key
-    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY;
-    if (!firecrawlApiKey) {
-      return NextResponse.json(
-        { error: 'Firecrawl API key not configured' },
-        { status: 500 }
       );
     }
 
@@ -74,10 +65,9 @@ export async function POST(request: NextRequest) {
       console.log('No payment header, Firecrawl will return 402');
     }
 
-    // Prepare Firecrawl headers
+    // x402 search needs no API key; the payment header is the credential
     const firecrawlHeaders: any = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${firecrawlApiKey}`,
     };
 
     // Forward the payment header (same name the client used) if provided
@@ -85,21 +75,15 @@ export async function POST(request: NextRequest) {
       firecrawlHeaders[paymentHeaderName] = paymentHeader;
     }
 
-    const firecrawlEndpoint = process.env.FIRECRAWL_API_BASE_URL || 'https://api.firecrawl.dev/v2/x402/search';
+    // Firecrawl's own x402 endpoint was retired; StableEnrich proxies Firecrawl search over x402 v2
+    const firecrawlEndpoint = process.env.X402_SEARCH_URL || 'https://stableenrich.dev/api/firecrawl/search';
     console.log('Calling Firecrawl x402 search endpoint:', firecrawlEndpoint);
     console.log('Search query:', query);
 
-    // Build search options matching Firecrawl's search API
+    // StableEnrich accepts { query, limit } with limit capped at 10
     const searchOptions = {
       query,
-      limit: Math.min(limit || 10, 30), // Cap at 30
-      sources: sources || ['web'], // Default to web search
-      ...(scrapeOptions && {
-        scrapeOptions: {
-          onlyMainContent: scrapeOptions.onlyMainContent !== undefined ? scrapeOptions.onlyMainContent : true,
-          ...(scrapeOptions.maxAge && { maxAge: scrapeOptions.maxAge })
-        }
-      })
+      limit: Math.min(limit || 10, 10),
     };
 
     console.log('Search options:', JSON.stringify(searchOptions, null, 2));
@@ -196,7 +180,7 @@ export async function POST(request: NextRequest) {
       // Success - Firecrawl returned the search results
       console.log('Firecrawl returned search results');
       console.log('Response status:', firecrawlResponse.status);
-      console.log('Results found:', firecrawlResponse.data?.data?.web?.length || 0);
+      console.log('Results found:', firecrawlResponse.data?.results?.length || 0);
 
       // Check for and log PAYMENT-RESPONSE (v2) / X-PAYMENT-RESPONSE (v1) header (transaction confirmation)
       const paymentResponseHeader =
@@ -222,7 +206,18 @@ export async function POST(request: NextRequest) {
         console.log('Note: No payment response header (payment may not have been required)');
       }
 
-      const response = NextResponse.json(firecrawlResponse.data);
+      // Normalize to the Firecrawl { data: { web: [...] } } shape the client reads
+      const results: any[] = firecrawlResponse.data?.results || [];
+      const response = NextResponse.json({
+        success: true,
+        data: {
+          web: results.map((r) => ({
+            title: r.title,
+            url: r.url,
+            markdown: r.description || r.snippet || '',
+          })),
+        },
+      });
 
       // Forward the payment receipt to client (PAYMENT-RESPONSE for v2 clients; X-PAYMENT-RESPONSE kept for v1)
       if (paymentResponseHeader) {
