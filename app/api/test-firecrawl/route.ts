@@ -28,13 +28,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for x402 payment header
-    const paymentHeader = request.headers.get('X-PAYMENT');
+    // Check for x402 payment header (v2: PAYMENT-SIGNATURE, v1: X-PAYMENT)
+    const paymentHeaderName = request.headers.get('PAYMENT-SIGNATURE') ? 'PAYMENT-SIGNATURE' : 'X-PAYMENT';
+    const paymentHeader = request.headers.get(paymentHeaderName);
 
     // Log the payment header if present (for debugging)
     if (paymentHeader) {
       console.log('Payment header received, forwarding to Firecrawl');
-      console.log('X-PAYMENT header (first 200 chars):', paymentHeader.substring(0, 200));
+      console.log(`${paymentHeaderName} header (first 200 chars):`, paymentHeader.substring(0, 200));
 
       // Decode and log the payment details
       try {
@@ -44,8 +45,8 @@ export async function POST(request: NextRequest) {
         // Payment validation logging
         console.log('═══ PAYMENT VALIDATION ═══');
         console.log('x402 Version:', decoded.x402Version);
-        console.log('Payment Scheme:', decoded.scheme);
-        console.log('Network:', decoded.network);
+        console.log('Payment Scheme:', decoded.accepted?.scheme ?? decoded.scheme);
+        console.log('Network:', decoded.accepted?.network ?? decoded.network);
         console.log('From Address:', decoded.payload?.authorization?.from);
         console.log('To Address (Recipient):', decoded.payload?.authorization?.to);
         console.log('Payment Value:', decoded.payload?.authorization?.value, 'units');
@@ -57,9 +58,10 @@ export async function POST(request: NextRequest) {
         console.log('Signature:', decoded.payload?.signature);
 
         // Validate network matches env
-        const expectedNetwork = process.env.NEXT_PUBLIC_NETWORK || 'base';
-        if (decoded.network !== expectedNetwork) {
-          console.warn(`⚠️  WARNING: Payment network (${decoded.network}) doesn't match expected network (${expectedNetwork})`);
+        const expectedNetwork = process.env.NEXT_PUBLIC_NETWORK || 'eip155:8453';
+        const paidNetwork = decoded.accepted?.network ?? decoded.network;
+        if (paidNetwork !== expectedNetwork && decoded.x402Version !== 1) {
+          console.warn(`⚠️  WARNING: Payment network (${paidNetwork}) doesn't match expected network (${expectedNetwork})`);
         }
 
         const expectedUSDC = process.env.USDC_CONTRACT_ADDRESS;
@@ -78,9 +80,9 @@ export async function POST(request: NextRequest) {
       'Authorization': `Bearer ${firecrawlApiKey}`,
     };
 
-    // Forward the X-PAYMENT header if provided
+    // Forward the payment header (same name the client used) if provided
     if (paymentHeader) {
-      firecrawlHeaders['X-PAYMENT'] = paymentHeader;
+      firecrawlHeaders[paymentHeaderName] = paymentHeader;
     }
 
     const firecrawlEndpoint = process.env.FIRECRAWL_API_BASE_URL || 'https://api.firecrawl.dev/v2/x402/search';
@@ -158,7 +160,7 @@ export async function POST(request: NextRequest) {
         console.error('Network:', firecrawlResponse.data.accepts?.[0]?.network);
         console.error('Expected asset:', firecrawlResponse.data.accepts?.[0]?.asset);
         console.error('Expected recipient:', firecrawlResponse.data.accepts?.[0]?.payTo);
-        console.error('Max amount:', firecrawlResponse.data.accepts?.[0]?.maxAmountRequired);
+        console.error('Max amount:', firecrawlResponse.data.accepts?.[0]?.amount ?? firecrawlResponse.data.accepts?.[0]?.maxAmountRequired);
 
         if (paymentHeader) {
           try {
@@ -178,11 +180,16 @@ export async function POST(request: NextRequest) {
         console.log('Payment requirements:', firecrawlResponse.data.accepts?.[0]);
       }
 
+      // v2 servers put requirements in the PAYMENT-REQUIRED header; v1 in the body
+      const paymentRequiredHeader = firecrawlResponse.headers['payment-required'];
       return NextResponse.json(
         firecrawlResponse.data,
         {
           status: 402,
-          headers: { 'Content-Type': 'application/json' }
+          headers: {
+            'Content-Type': 'application/json',
+            ...(paymentRequiredHeader ? { 'PAYMENT-REQUIRED': paymentRequiredHeader } : {}),
+          }
         }
       );
     } else if (firecrawlResponse.status === 200) {
@@ -191,11 +198,12 @@ export async function POST(request: NextRequest) {
       console.log('Response status:', firecrawlResponse.status);
       console.log('Results found:', firecrawlResponse.data?.data?.web?.length || 0);
 
-      // Check for and log X-PAYMENT-RESPONSE header (transaction confirmation)
-      const paymentResponseHeader = firecrawlResponse.headers['x-payment-response'];
+      // Check for and log PAYMENT-RESPONSE (v2) / X-PAYMENT-RESPONSE (v1) header (transaction confirmation)
+      const paymentResponseHeader =
+        firecrawlResponse.headers['payment-response'] ?? firecrawlResponse.headers['x-payment-response'];
       if (paymentResponseHeader) {
         console.log('═══ PAYMENT CONFIRMATION ═══');
-        console.log('Raw X-PAYMENT-RESPONSE header:', paymentResponseHeader);
+        console.log('Raw payment response header:', paymentResponseHeader);
 
         try {
           const decoded = JSON.parse(Buffer.from(paymentResponseHeader, 'base64').toString());
@@ -206,20 +214,21 @@ export async function POST(request: NextRequest) {
             console.log('View on BaseScan:', `https://basescan.org/tx/${decoded.transaction}`);
           }
         } catch (e) {
-          console.error('Could not decode X-PAYMENT-RESPONSE:', e);
+          console.error('Could not decode payment response header:', e);
         }
 
         console.log('═══ END PAYMENT CONFIRMATION ═══');
       } else {
-        console.log('Note: No X-PAYMENT-RESPONSE header (payment may not have been required)');
+        console.log('Note: No payment response header (payment may not have been required)');
       }
 
       const response = NextResponse.json(firecrawlResponse.data);
 
-      // Forward the X-PAYMENT-RESPONSE header to client
+      // Forward the payment receipt to client (PAYMENT-RESPONSE for v2 clients; X-PAYMENT-RESPONSE kept for v1)
       if (paymentResponseHeader) {
+        response.headers.set('PAYMENT-RESPONSE', paymentResponseHeader);
         response.headers.set('X-PAYMENT-RESPONSE', paymentResponseHeader);
-        response.headers.set('Access-Control-Expose-Headers', 'X-PAYMENT-RESPONSE');
+        response.headers.set('Access-Control-Expose-Headers', 'PAYMENT-RESPONSE, X-PAYMENT-RESPONSE');
       }
 
       return response;

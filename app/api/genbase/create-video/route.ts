@@ -19,13 +19,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for x402 payment header
-    const paymentHeader = request.headers.get('X-PAYMENT');
+    // Check for x402 payment header (v2: PAYMENT-SIGNATURE, v1: X-PAYMENT)
+    const paymentHeaderName = request.headers.get('PAYMENT-SIGNATURE') ? 'PAYMENT-SIGNATURE' : 'X-PAYMENT';
+    const paymentHeader = request.headers.get(paymentHeaderName);
 
     // Log the payment header if present (for debugging)
     if (paymentHeader) {
       console.log('[Genbase] Payment header received, forwarding to Genbase');
-      console.log('[Genbase] X-PAYMENT header (first 200 chars):', paymentHeader.substring(0, 200));
+      console.log(`[Genbase] ${paymentHeaderName} header (first 200 chars):`, paymentHeader.substring(0, 200));
 
       // Decode and log the payment details
       try {
@@ -35,8 +36,8 @@ export async function POST(request: NextRequest) {
         // Payment validation logging
         console.log('[Genbase] ═══ PAYMENT VALIDATION ═══');
         console.log('[Genbase] x402 Version:', decoded.x402Version);
-        console.log('[Genbase] Payment Scheme:', decoded.scheme);
-        console.log('[Genbase] Network:', decoded.network);
+        console.log('[Genbase] Payment Scheme:', decoded.accepted?.scheme ?? decoded.scheme);
+        console.log('[Genbase] Network:', decoded.accepted?.network ?? decoded.network);
         console.log('[Genbase] From Address:', decoded.payload?.authorization?.from);
         console.log('[Genbase] To Address (Recipient):', decoded.payload?.authorization?.to);
         console.log('[Genbase] Payment Value:', decoded.payload?.authorization?.value, 'units');
@@ -48,9 +49,10 @@ export async function POST(request: NextRequest) {
         console.log('[Genbase] Signature:', decoded.payload?.signature);
 
         // Validate network matches env
-        const expectedNetwork = process.env.NEXT_PUBLIC_NETWORK || 'base';
-        if (decoded.network !== expectedNetwork) {
-          console.warn(`[Genbase] ⚠️  WARNING: Payment network (${decoded.network}) doesn't match expected network (${expectedNetwork})`);
+        const expectedNetwork = process.env.NEXT_PUBLIC_NETWORK || 'eip155:8453';
+        const paidNetwork = decoded.accepted?.network ?? decoded.network;
+        if (paidNetwork !== expectedNetwork && decoded.x402Version !== 1) {
+          console.warn(`[Genbase] ⚠️  WARNING: Payment network (${paidNetwork}) doesn't match expected network (${expectedNetwork})`);
         }
 
         const expectedUSDC = process.env.USDC_CONTRACT_ADDRESS;
@@ -68,9 +70,9 @@ export async function POST(request: NextRequest) {
       'Content-Type': 'application/json',
     };
 
-    // Forward the X-PAYMENT header if provided
+    // Forward the payment header (same name the client used) if provided
     if (paymentHeader) {
-      genbaseHeaders['X-PAYMENT'] = paymentHeader;
+      genbaseHeaders[paymentHeaderName] = paymentHeader;
     }
 
     const genbaseEndpoint = process.env.GENBASE_API_URL || 'https://www.genbase.fun';
@@ -148,7 +150,7 @@ export async function POST(request: NextRequest) {
         console.error('[Genbase] Network:', genbaseResponse.data.accepts?.[0]?.network);
         console.error('[Genbase] Expected asset:', genbaseResponse.data.accepts?.[0]?.asset);
         console.error('[Genbase] Expected recipient:', genbaseResponse.data.accepts?.[0]?.payTo);
-        console.error('[Genbase] Max amount:', genbaseResponse.data.accepts?.[0]?.maxAmountRequired);
+        console.error('[Genbase] Max amount:', genbaseResponse.data.accepts?.[0]?.amount ?? genbaseResponse.data.accepts?.[0]?.maxAmountRequired);
 
         if (paymentHeader) {
           try {
@@ -168,11 +170,16 @@ export async function POST(request: NextRequest) {
         console.log('[Genbase] Payment requirements:', genbaseResponse.data.accepts?.[0]);
       }
 
+      // v2 servers put requirements in the PAYMENT-REQUIRED header; v1 in the body
+      const paymentRequiredHeader = genbaseResponse.headers['payment-required'];
       return NextResponse.json(
         genbaseResponse.data,
         {
           status: 402,
-          headers: { 'Content-Type': 'application/json' }
+          headers: {
+            'Content-Type': 'application/json',
+            ...(paymentRequiredHeader ? { 'PAYMENT-REQUIRED': paymentRequiredHeader } : {}),
+          }
         }
       );
     } else if (genbaseResponse.status === 200) {
@@ -181,11 +188,12 @@ export async function POST(request: NextRequest) {
       console.log('[Genbase] Response status:', genbaseResponse.status);
       console.log('[Genbase] Task created:', genbaseResponse.data?.data?.id || 'N/A');
 
-      // Check for and log X-PAYMENT-RESPONSE header (transaction confirmation)
-      const paymentResponseHeader = genbaseResponse.headers['x-payment-response'];
+      // Check for and log PAYMENT-RESPONSE (v2) / X-PAYMENT-RESPONSE (v1) header (transaction confirmation)
+      const paymentResponseHeader =
+        genbaseResponse.headers['payment-response'] ?? genbaseResponse.headers['x-payment-response'];
       if (paymentResponseHeader) {
         console.log('[Genbase] ═══ PAYMENT CONFIRMATION ═══');
-        console.log('[Genbase] Raw X-PAYMENT-RESPONSE header:', paymentResponseHeader);
+        console.log('[Genbase] Raw payment response header:', paymentResponseHeader);
 
         try {
           const decoded = JSON.parse(Buffer.from(paymentResponseHeader, 'base64').toString());
@@ -196,20 +204,21 @@ export async function POST(request: NextRequest) {
             console.log('[Genbase] View on BaseScan:', `https://basescan.org/tx/${decoded.transaction}`);
           }
         } catch (e) {
-          console.error('[Genbase] Could not decode X-PAYMENT-RESPONSE:', e);
+          console.error('[Genbase] Could not decode payment response header:', e);
         }
 
         console.log('[Genbase] ═══ END PAYMENT CONFIRMATION ═══');
       } else {
-        console.log('[Genbase] Note: No X-PAYMENT-RESPONSE header (payment may not have been required)');
+        console.log('[Genbase] Note: No payment response header (payment may not have been required)');
       }
 
       const response = NextResponse.json(genbaseResponse.data);
 
-      // Forward the X-PAYMENT-RESPONSE header to client
+      // Forward the payment receipt to client (PAYMENT-RESPONSE for v2 clients; X-PAYMENT-RESPONSE kept for v1)
       if (paymentResponseHeader) {
+        response.headers.set('PAYMENT-RESPONSE', paymentResponseHeader);
         response.headers.set('X-PAYMENT-RESPONSE', paymentResponseHeader);
-        response.headers.set('Access-Control-Expose-Headers', 'X-PAYMENT-RESPONSE');
+        response.headers.set('Access-Control-Expose-Headers', 'PAYMENT-RESPONSE, X-PAYMENT-RESPONSE');
       }
 
       return response;

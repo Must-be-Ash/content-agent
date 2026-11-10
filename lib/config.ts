@@ -20,7 +20,7 @@ export const GENBASE_CONFIG = {
 // x402 Network Configuration
 export const X402_CONFIG = {
   facilitatorUrl: process.env.FACILITATOR_URL ?? 'https://api.x402.org/facilitator',
-  network: process.env.NEXT_PUBLIC_NETWORK ?? 'base',
+  network: process.env.NEXT_PUBLIC_NETWORK ?? 'eip155:8453', // CAIP-2 (x402 v2)
   usdcContractAddress: process.env.USDC_CONTRACT_ADDRESS ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
 };
 
@@ -47,7 +47,7 @@ export const COST_CONFIG = {
   firecrawlSearchMax: 0.05, // maximum cost per search
   sora2Video10s: 0.2, // cost per 10-second video
   initialCredit: 5.0, // initial wallet credit
-  maxPaymentAmount: 0.1, // max payment amount for x402-fetch wrapper
+  maxPaymentAmount: 0.1, // max payment amount for the @x402/fetch spend policy
 };
 
 // Workflow Configuration

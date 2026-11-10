@@ -4,8 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import Providers from './providers';
 import { useIsInitialized, useIsSignedIn, useCurrentUser } from '@coinbase/cdp-hooks';
 import { getCurrentUser, toViemAccount } from '@coinbase/cdp-core';
-import { wrapFetchWithPayment } from 'x402-fetch';
-import { createWalletClient, http, publicActions } from 'viem';
+import { wrapFetchWithPayment, x402Client } from '@x402/fetch';
+import { toClientEvmSigner } from '@x402/evm';
+import { registerExactEvmScheme } from '@x402/evm/exact/client';
+import { createPublicClient, http } from 'viem';
 import { base } from 'viem/chains';
 import { LandingPage } from '@/components/landing-page';
 import { ExpandableWallet } from '@/components/expandable-wallet';
@@ -134,11 +136,10 @@ function ClientApp() {
           const chain = base; // Base network (Chain ID 8453)
           const rpcUrl = 'https://mainnet.base.org';
 
-          const walletClient = createWalletClient({
-            account: viemAccount,
+          const publicClient = createPublicClient({
             chain: chain,
             transport: http(rpcUrl),
-          }).extend(publicActions);
+          });
 
           // Max payment amount in USDC (6 decimals)
           // 0.3 USDC = 300000 units (0.3 * 10^6) - enough for search + video
@@ -147,12 +148,20 @@ function ClientApp() {
           console.log('[Client] Wrapping fetch with x402 payment capability');
           console.log('[Client] Max payment amount:', maxPaymentAmount.toString(), 'units (USDC)');
 
-          // Cast wallet client to any to avoid viem/x402-fetch type mismatch
-          fetchFunc = wrapFetchWithPayment(
-            fetch,
-            walletClient as any,
-            maxPaymentAmount
-          ) as typeof fetch;
+          // x402 v2 client; registerExactEvmScheme also registers v1 so v1-only
+          // services (e.g. Genbase) keep working. Policy enforces the spend cap.
+          const client = new x402Client();
+          registerExactEvmScheme(client, {
+            signer: toClientEvmSigner(viemAccount as any, publicClient),
+            policies: [
+              (_version, reqs) =>
+                reqs.filter(
+                  (r: any) => BigInt(r.amount ?? r.maxAmountRequired) <= maxPaymentAmount
+                ),
+            ],
+          });
+
+          fetchFunc = wrapFetchWithPayment(fetch, client) as typeof fetch;
         }
       } catch (signerError) {
         console.warn('[Client] Failed to setup x402 payment:', signerError);
@@ -169,7 +178,7 @@ function ClientApp() {
       // The x402-wrapped fetch automatically:
       // 1. Makes initial request to /api/test-firecrawl
       // 2. If 402 returned, creates and signs payment
-      // 3. Retries request with X-PAYMENT header
+      // 3. Retries request with PAYMENT-SIGNATURE (v2) / X-PAYMENT (v1) header
       // 4. API route adds Authorization header and forwards to Firecrawl
       const searchResponse = await fetchFunc('/api/test-firecrawl', {
         method: 'POST',
@@ -193,8 +202,8 @@ function ClientApp() {
         throw new Error(errorMsg);
       }
 
-      // Extract and log payment settlement from X-PAYMENT-RESPONSE header
-      const paymentResponseHeader = searchResponse.headers.get('X-PAYMENT-RESPONSE');
+      // Extract and log payment settlement from PAYMENT-RESPONSE header
+      const paymentResponseHeader = (searchResponse.headers.get('PAYMENT-RESPONSE') ?? searchResponse.headers.get('X-PAYMENT-RESPONSE'));
       const txHash = extractTxHashFromPaymentResponse(paymentResponseHeader);
 
       if (txHash) {
@@ -388,8 +397,8 @@ function ClientApp() {
       // The x402-wrapped fetch automatically:
       // 1. Makes initial request to /api/genbase/create-video
       // 2. If 402 returned, creates and signs payment
-      // 3. Retries request with X-PAYMENT header
-      // 4. API route forwards X-PAYMENT header to Genbase
+      // 3. Retries request with PAYMENT-SIGNATURE (v2) / X-PAYMENT (v1) header
+      // 4. API route forwards the payment header to Genbase
       const videoResponse = await fetchFunc('/api/genbase/create-video', {
         method: 'POST',
         headers: {
@@ -411,7 +420,7 @@ function ClientApp() {
       }
 
       // Extract and log payment settlement
-      const paymentResponseHeader = videoResponse.headers.get('X-PAYMENT-RESPONSE');
+      const paymentResponseHeader = (videoResponse.headers.get('PAYMENT-RESPONSE') ?? videoResponse.headers.get('X-PAYMENT-RESPONSE'));
       const txHash = extractTxHashFromPaymentResponse(paymentResponseHeader);
 
       if (txHash) {

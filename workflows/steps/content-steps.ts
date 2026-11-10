@@ -57,10 +57,16 @@ export async function searchWeb(params: {
     'Authorization': `Bearer ${firecrawlApiKey}`,
   };
 
-  // Forward X-PAYMENT header if provided (from client via API route)
+  // Forward payment header if provided (from client via API route)
+  // v2 payloads go in PAYMENT-SIGNATURE, v1 payloads in X-PAYMENT
   if (params.paymentHeader) {
-    headers['X-PAYMENT'] = params.paymentHeader;
-    console.log('[Firecrawl] X-PAYMENT header present (forwarding to Firecrawl)');
+    let paymentHeaderName = 'PAYMENT-SIGNATURE';
+    try {
+      const decoded = JSON.parse(Buffer.from(params.paymentHeader, 'base64').toString());
+      if (decoded.x402Version === 1) paymentHeaderName = 'X-PAYMENT';
+    } catch {}
+    headers[paymentHeaderName] = params.paymentHeader;
+    console.log(`[Firecrawl] ${paymentHeaderName} header present (forwarding to Firecrawl)`);
   } else {
     console.log('[Firecrawl] No payment header - Firecrawl will return 402');
   }
@@ -98,7 +104,7 @@ export async function searchWeb(params: {
         `Firecrawl payment required: ${errorMsg}. ` +
         `Network: ${(response.data as any).accepts?.[0]?.network}, ` +
         `Asset: ${(response.data as any).accepts?.[0]?.asset}, ` +
-        `Amount: ${(response.data as any).accepts?.[0]?.maxAmountRequired}`
+        `Amount: ${(response.data as any).accepts?.[0]?.amount ?? (response.data as any).accepts?.[0]?.maxAmountRequired}`
       );
     }
 

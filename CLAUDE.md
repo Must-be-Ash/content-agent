@@ -65,7 +65,7 @@ Two primary directives transform async JavaScript into durable, resumable workfl
       /balance/route.ts             # Check USDC balance
   /providers.tsx                    # CDPReactProvider setup
   /layout.tsx                       # Wrap with Providers
-  /page.tsx                         # Main UI with x402-fetch integration
+  /page.tsx                         # Main UI with @x402/fetch (v2) integration
 /workflows
   /content-generator.ts             # Main orchestrator workflow
   /steps
@@ -91,18 +91,23 @@ next.config.ts                      # export default withWorkflow(nextConfig)
 const user = await getCurrentUser();
 const viemAccount = await toViemAccount(user.evmAccounts[0]);
 
-// 2. Create wallet client for Base network
-const walletClient = createWalletClient({
-  account: viemAccount,
+// 2. Create public client for Base network
+const publicClient = createPublicClient({
   chain: base,
   transport: http('https://mainnet.base.org'),
-}).extend(publicActions);
+});
 
-// 3. Wrap fetch with x402 payment capability
+// 3. Wrap fetch with x402 v2 payment capability
+// registerExactEvmScheme registers v2 (eip155:*) AND v1 schemes, so v1-only services (Genbase) still work
 const maxPaymentAmount = BigInt(0.1 * 10 ** 6); // 0.1 USDC
-const fetchFunc = wrapFetchWithPayment(fetch, walletClient, maxPaymentAmount);
+const client = new x402Client();
+registerExactEvmScheme(client, {
+  signer: toClientEvmSigner(viemAccount, publicClient),
+  policies: [(_v, reqs) => reqs.filter((r) => BigInt(r.amount ?? r.maxAmountRequired) <= maxPaymentAmount)],
+});
+const fetchFunc = wrapFetchWithPayment(fetch, client);
 
-// 4. Call API - x402-fetch automatically handles 402 → payment → retry
+// 4. Call API - @x402/fetch automatically handles 402 → payment → retry
 const response = await fetchFunc('/api/content/create', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -112,8 +117,8 @@ const response = await fetchFunc('/api/content/create', {
 
 ### API Route (app/api/content/create/route.ts)
 ```typescript
-// Extract and forward X-PAYMENT header to workflow
-const paymentHeader = request.headers.get('X-PAYMENT');
+// Extract and forward payment header to workflow (v2: PAYMENT-SIGNATURE, v1: X-PAYMENT)
+const paymentHeader = request.headers.get('PAYMENT-SIGNATURE') ?? request.headers.get('X-PAYMENT');
 await start(contentGeneratorWorkflow, [{ topic, paymentHeader, ... }]);
 ```
 
@@ -121,17 +126,18 @@ await start(contentGeneratorWorkflow, [{ topic, paymentHeader, ... }]);
 ```typescript
 "use step";
 
-// Forward X-PAYMENT header to service (Firecrawl or Genbase)
+// Forward payment header to service (Firecrawl or Genbase)
 const headers: Record<string, string> = {
   'Content-Type': 'application/json',
   'Authorization': `Bearer ${API_KEY}`,
 };
 
 if (params.paymentHeader) {
-  headers['X-PAYMENT'] = params.paymentHeader;
+  // v2 payloads → PAYMENT-SIGNATURE, v1 payloads (x402Version: 1) → X-PAYMENT
+  headers[paymentHeaderName] = params.paymentHeader;
 }
 
-// Service verifies payment and returns X-PAYMENT-RESPONSE with TX hash
+// Service verifies payment and returns PAYMENT-RESPONSE (v1: X-PAYMENT-RESPONSE) with TX hash
 const response = await axios.post(endpoint, body, { headers });
 ```
 
@@ -165,7 +171,7 @@ const response = await axios.post(endpoint, body, { headers });
 ### Create Video (Paid via x402)
 **POST** `https://www.genbase.fun/api/video/create-sora2`
 - **Cost**: $0.20 USDC per 10s video
-- **Headers**: `X-PAYMENT` (from x402-fetch wrapper)
+- **Headers**: `PAYMENT-SIGNATURE` / `X-PAYMENT` (from @x402/fetch wrapper)
 - **Body**: `{ prompt, model: "sora-2", seconds: "10", size: "1280x720" }`
 - **Returns**: `{ data: { id: "sora-2:task_..." } }`
 - **Status progression**: pending → processing → video_upsampling → Ready
@@ -192,7 +198,7 @@ for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 
 **POST** `https://api.firecrawl.dev/v2/x402/search`
 - **Cost**: ~$0.01-0.05 USDC per search
-- **Headers**: `Authorization: Bearer ${FIRECRAWL_API_KEY}`, `X-PAYMENT` (forwarded)
+- **Headers**: `Authorization: Bearer ${FIRECRAWL_API_KEY}`, `PAYMENT-SIGNATURE` / `X-PAYMENT` (forwarded)
 - **Body**: `{ query, limit, sources: ['web'], scrapeOptions: { onlyMainContent: true } }`
 - **Returns**: `{ data: { web: [{ title, url, markdown }] } }`
 
@@ -257,9 +263,9 @@ npx workflow inspect runs --web    # Web UI
    - All side effects must be in steps
 
 2. **x402 payment flow**
-   - Payment handled client-side by x402-fetch wrapper
-   - X-PAYMENT header forwarded through API → workflow → steps
-   - Services verify payment and return X-PAYMENT-RESPONSE with TX hash
+   - Payment handled client-side by @x402/fetch wrapper
+   - Payment header (PAYMENT-SIGNATURE / X-PAYMENT) forwarded through API → workflow → steps
+   - Services verify payment and return PAYMENT-RESPONSE with TX hash
 
 3. **Base network (Chain ID 8453)**
    - All payments in USDC (6 decimals)
@@ -300,7 +306,7 @@ npx workflow inspect runs --web    # Web UI
 - Store credentials in environment variables
 - Use secret tokens in webhook URLs
 - Sign payment requests in steps (never in workflows)
-- X-PAYMENT headers should only be forwarded, never generated in server code
+- Payment headers (PAYMENT-SIGNATURE / X-PAYMENT) should only be forwarded, never generated in server code
 - You have access to all the information you need about workflow kit including all the docs, API references, error handeling and the repo and code examples here in these three folders:
   /Users/ashnouruzi/content-agent/content-agent-docs/workflow-docs
   /Users/ashnouruzi/content-agent/content-agent-docs/workflow-examples

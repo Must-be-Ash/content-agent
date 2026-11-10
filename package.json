@@ -20,6 +20,8 @@
     "@vercel/analytics": "^1.5.0",
     "@workflow/ai": "^4.0.1-beta.13",
     "@workflow/next": "^4.0.1-beta.13",
+    "@x402/evm": "^2.30.0",
+    "@x402/fetch": "^2.30.0",
     "ai": "^5.0.92",
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
@@ -33,7 +35,6 @@
     "tailwind-merge": "^3.4.0",
     "viem": "^2.38.6",
     "workflow": "^4.0.1-beta.13",
-    "x402-fetch": "^0.7.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

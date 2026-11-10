@@ -56,7 +56,7 @@ GENBASE_API_URL=https://www.genbase.fun
 OPENAI_API_KEY=your_openai_api_key
 
 # x402 Network (Base)
-NEXT_PUBLIC_NETWORK=base
+NEXT_PUBLIC_NETWORK=eip155:8453
 USDC_CONTRACT_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 ```
 
@@ -75,7 +75,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the application.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         User Interface                          │
-│  (Next.js App Router + CDP Embedded Wallet + x402-fetch)       │
+│  (Next.js App Router + CDP Embedded Wallet + @x402/fetch)      │
 └────────────┬────────────────────────────────────────────────────┘
              │
              │ 1. User enters topic
@@ -150,7 +150,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the application.
 **Problem:** Vercel Workflow DevKit requires deterministic execution, but x402 micropayments involve interactive 402 status codes and payment retries.
 
 **Solution:** Hybrid approach where:
-- **Client-side**: Handles x402 payments using `x402-fetch` wrapper
+- **Client-side**: Handles x402 payments using the `@x402/fetch` (v2) wrapper
 - **Server-side workflows**: Orchestrate deterministic AI operations
 - **Proxy API routes**: Bridge client payments with server API keys
 
@@ -162,7 +162,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the application.
 
 1. **Client**: User enters topic (e.g., "what's new with x402")
 2. **Client**: x402-wrapped fetch calls Firecrawl search API
-   - `x402-fetch` automatically handles 402 → payment → retry
+   - `@x402/fetch` automatically handles 402 → payment → retry
    - Payment settled on Base network (~$0.01-0.05 USDC)
 3. **Server**: API route starts `contentGeneratorWorkflow`
 4. **Workflow**: Receives research, streams progress updates
@@ -187,16 +187,20 @@ Open [http://localhost:3000](http://localhost:3000) to see the application.
 // Client setup (app/page.tsx)
 const user = await getCurrentUser(); // CDP wallet
 const viemAccount = await toViemAccount(user.evmAccounts[0]);
-const walletClient = createWalletClient({
-  account: viemAccount,
+const publicClient = createPublicClient({
   chain: base,
   transport: http('https://mainnet.base.org'),
 });
 
-// Wrap fetch with x402 payment capability
-const fetchFunc = wrapFetchWithPayment(fetch, walletClient, maxPaymentAmount);
+// Wrap fetch with x402 v2 payment capability (also handles v1 services like Genbase)
+const client = new x402Client();
+registerExactEvmScheme(client, {
+  signer: toClientEvmSigner(viemAccount, publicClient),
+  policies: [(_v, reqs) => reqs.filter((r) => BigInt(r.amount ?? r.maxAmountRequired) <= maxPaymentAmount)],
+});
+const fetchFunc = wrapFetchWithPayment(fetch, client);
 
-// Call API - x402-fetch handles entire payment flow
+// Call API - @x402/fetch handles entire payment flow
 const response = await fetchFunc('/api/test-firecrawl', {
   method: 'POST',
   body: JSON.stringify({ query, limit }),
@@ -206,11 +210,11 @@ const response = await fetchFunc('/api/test-firecrawl', {
 **What happens under the hood:**
 1. Client calls API without payment
 2. Server forwards to Firecrawl (returns 402 Payment Required)
-3. `x402-fetch` intercepts 402, creates payment authorization
-4. Client retries with `X-PAYMENT` header
+3. `@x402/fetch` intercepts 402, creates payment authorization
+4. Client retries with `PAYMENT-SIGNATURE` header (`X-PAYMENT` for v1 services)
 5. Server forwards payment proof to Firecrawl
 6. Firecrawl verifies on-chain and returns results
-7. Server forwards `X-PAYMENT-RESPONSE` with transaction hash
+7. Server forwards `PAYMENT-RESPONSE` with transaction hash
 8. Client logs transaction on BaseScan
 
 ## Project Structure
@@ -253,7 +257,7 @@ content-agent/
 #### `app/page.tsx` (695 lines)
 **Main application logic:**
 - CDP wallet authentication
-- x402 payment setup with `x402-fetch`
+- x402 payment setup with `@x402/fetch`
 - Two-phase workflow orchestration
 - Real-time progress updates via SSE
 - Result display with cost breakdown
@@ -265,10 +269,10 @@ content-agent/
 
 #### `app/api/test-firecrawl/route.ts`
 **Firecrawl proxy with x402 support:**
-- Extracts `X-PAYMENT` header from client
+- Extracts `PAYMENT-SIGNATURE` / `X-PAYMENT` header from client
 - Adds `Authorization: Bearer {API_KEY}`
 - Forwards both headers to Firecrawl
-- Returns 402 or forwards `X-PAYMENT-RESPONSE`
+- Returns 402 or forwards `PAYMENT-RESPONSE`
 
 **Why needed?** Keeps API key secret while enabling client-side x402 payments.
 
@@ -305,7 +309,7 @@ content-agent/
 
 ### Payments & Wallet
 - **x402 Protocol** - Pay-per-use HTTP requests
-- **x402-fetch** - Client-side payment wrapper
+- **@x402/fetch + @x402/evm** - Client-side payment wrapper (x402 v2)
 - **Coinbase Developer Platform** - Embedded wallets
 - **Viem** - Ethereum interactions
 - **Base Network** - L2 for low-cost USDC transactions
@@ -391,9 +395,9 @@ vercel deploy
 **Flow:**
 1. Request → 402 response with payment requirements
 2. Client creates payment authorization
-3. Retry with `X-PAYMENT` header
+3. Retry with `PAYMENT-SIGNATURE` header
 4. Server verifies and processes
-5. Returns `X-PAYMENT-RESPONSE` with TX hash
+5. Returns `PAYMENT-RESPONSE` with TX hash
 
 ### CDP Embedded Wallets
 

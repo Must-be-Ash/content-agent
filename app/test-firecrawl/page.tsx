@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import Providers from '../providers';
 import { useCurrentUser, useIsSignedIn, useIsInitialized } from '@coinbase/cdp-hooks';
 import { getCurrentUser, toViemAccount } from '@coinbase/cdp-core';
-import { wrapFetchWithPayment } from 'x402-fetch';
-import { createWalletClient, http, publicActions } from 'viem';
+import { wrapFetchWithPayment, x402Client } from '@x402/fetch';
+import { toClientEvmSigner } from '@x402/evm';
+import { registerExactEvmScheme } from '@x402/evm/exact/client';
+import { createPublicClient, http } from 'viem';
 import { base } from 'viem/chains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,19 +103,32 @@ function TestFirecrawlContent() {
           const chain = base;
           const rpcUrl = 'https://mainnet.base.org';
 
-          const walletClient = createWalletClient({
-            account: viemAccount,
+          const publicClient = createPublicClient({
             chain: chain,
             transport: http(rpcUrl),
-          }).extend(publicActions);
+          });
 
-          const maxPaymentAmount = BigInt(0.1 * 10 ** 6); // 0.1 USDC
+          // Max payment amount in USDC (6 decimals)
+          // 0.1 USDC
+          const maxPaymentAmount = BigInt(0.1 * 10 ** 6);
 
           console.log('[Test] Wrapping fetch with x402 payment capability');
-          console.log('[Test] Max payment amount:', maxPaymentAmount.toString(), 'units (0.1 USDC)');
+          console.log('[Test] Max payment amount:', maxPaymentAmount.toString(), 'units (USDC)');
 
-          // @ts-ignore
-          fetchFunc = wrapFetchWithPayment(fetch, walletClient, maxPaymentAmount) as typeof fetch;
+          // x402 v2 client; registerExactEvmScheme also registers v1 so v1-only
+          // services (e.g. Genbase) keep working. Policy enforces the spend cap.
+          const client = new x402Client();
+          registerExactEvmScheme(client, {
+            signer: toClientEvmSigner(viemAccount as any, publicClient),
+            policies: [
+              (_version, reqs) =>
+                reqs.filter(
+                  (r: any) => BigInt(r.amount ?? r.maxAmountRequired) <= maxPaymentAmount
+                ),
+            ],
+          });
+
+          fetchFunc = wrapFetchWithPayment(fetch, client) as typeof fetch;
         }
       } catch (signerError) {
         console.warn('[Test] Failed to setup x402 payment:', signerError);
@@ -151,8 +166,8 @@ function TestFirecrawlContent() {
       }
 
       // Extract payment response header
-      const paymentResponseHeader = response.headers.get('X-PAYMENT-RESPONSE');
-      console.log('[Test] X-PAYMENT-RESPONSE header:', paymentResponseHeader);
+      const paymentResponseHeader = (response.headers.get('PAYMENT-RESPONSE') ?? response.headers.get('X-PAYMENT-RESPONSE'));
+      console.log('[Test] PAYMENT-RESPONSE header:', paymentResponseHeader);
 
       const txHash = extractTxHashFromPaymentResponse(paymentResponseHeader);
 

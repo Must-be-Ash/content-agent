@@ -14,7 +14,7 @@ export interface PaymentSettlement {
 /**
  * Logs a payment settlement with formatted output for console visibility
  * @param service - The service that was paid (Firecrawl or Genbase)
- * @param txHash - Transaction hash from X-PAYMENT-RESPONSE header
+ * @param txHash - Transaction hash from PAYMENT-RESPONSE header
  * @param estimatedAmount - Estimated payment amount in USDC
  */
 export function logPaymentSettlement(
@@ -48,9 +48,9 @@ export function logPaymentSettlement(
 }
 
 /**
- * Extracts transaction hash from X-PAYMENT-RESPONSE header
+ * Extracts transaction hash from PAYMENT-RESPONSE header
  * Expected format: "tx_hash:0x..."
- * @param paymentResponseHeader - Value from X-PAYMENT-RESPONSE header
+ * @param paymentResponseHeader - Value from PAYMENT-RESPONSE header
  * @returns Transaction hash or null if not found
  */
 export function extractTxHashFromPaymentResponse(
@@ -60,7 +60,14 @@ export function extractTxHashFromPaymentResponse(
     return null;
   }
 
-  // Parse format: "tx_hash:0x..."
+  try {
+    const decoded = JSON.parse(atob(paymentResponseHeader));
+    if (typeof decoded?.transaction === 'string' && decoded.transaction) {
+      return decoded.transaction;
+    }
+  } catch {}
+
+  // Parse legacy format: "tx_hash:0x..."
   const match = paymentResponseHeader.match(/tx_hash:([0-9a-fA-Fx]+)/);
   return match ? match[1] : null;
 }
